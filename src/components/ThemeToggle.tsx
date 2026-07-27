@@ -23,11 +23,13 @@ export default function ThemeToggle() {
     <button
       type="button"
       onClick={toggle}
-      className="btn btn-ghost w-full justify-start text-xs"
+      className="btn btn-ghost sb-row w-full justify-start text-xs"
       aria-label="Ganti tema terang/gelap"
     >
-      <span className="theme-light-only">☾ Mode gelap</span>
-      <span className="theme-dark-only">☀ Mode terang</span>
+      <span aria-hidden className="theme-light-only">☾</span>
+      <span aria-hidden className="theme-dark-only">☀</span>
+      <span className="sb-expanded-only theme-light-only">Mode gelap</span>
+      <span className="sb-expanded-only theme-dark-only">Mode terang</span>
     </button>
   );
 }

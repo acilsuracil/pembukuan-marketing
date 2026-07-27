@@ -6,7 +6,13 @@ export const metadata: Metadata = {
   description: "Panel admin arus kas dan pengeluaran dompet USDT",
 };
 
-const THEME_BOOT = `try{var t=localStorage.getItem('ledger-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}`;
+// Tema dan lebar sidebar diterapkan sebelum paint pertama, supaya halaman tidak
+// sempat berkedip dari kondisi bawaan ke pilihan yang tersimpan.
+const BOOT = `try{
+var d=document.documentElement;
+var t=localStorage.getItem('ledger-theme');if(t)d.dataset.theme=t;
+if(localStorage.getItem('ledger-sidebar')==='collapsed')d.dataset.sidebar='collapsed';
+}catch(e){}`;
 
 export default function RootLayout({
   children,
@@ -14,7 +20,7 @@ export default function RootLayout({
   return (
     <html lang="id" className="h-full antialiased" suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
+        <script dangerouslySetInnerHTML={{ __html: BOOT }} />
       </head>
       <body className="min-h-full">{children}</body>
     </html>

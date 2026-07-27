@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import EphemeralWarning from "@/components/EphemeralWarning";
 import Nav from "@/components/Nav";
+import SidebarToggle from "@/components/SidebarToggle";
 import ThemeToggle from "@/components/ThemeToggle";
 import UserMenu from "@/components/UserMenu";
 import { canOpenAdmin, getLockUntil, hasPerm } from "@/lib/policy";
@@ -28,9 +29,9 @@ export default async function AppLayout({
 
   return (
     <div className="mx-auto flex min-h-screen max-w-[1400px] flex-col gap-6 px-4 py-6 lg:flex-row lg:gap-8 lg:px-8">
-      <header className="lg:w-56 lg:shrink-0">
-        <div className="flex items-center justify-between gap-3 lg:block">
-          <div>
+      <header className="app-sidebar">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
             <div className="flex items-center gap-2">
               <span
                 aria-hidden
@@ -38,13 +39,13 @@ export default async function AppLayout({
               >
                 ₮
               </span>
-              <span className="text-[15px] font-semibold tracking-tight">
+              <span className="sb-expanded-only truncate text-[15px] font-semibold tracking-tight">
                 Pembukuan USDT
               </span>
             </div>
-            <p className="mt-1 hidden text-xs text-[var(--text-muted)] lg:block">
-              Arus kas dompet
-            </p>
+          </div>
+          <div className="sb-toggle-wrap">
+            <SidebarToggle />
           </div>
           <div className="lg:hidden">
             <UserMenu user={user} compact />
@@ -54,11 +55,14 @@ export default async function AppLayout({
         <Nav access={access} pending={pending} />
 
         {lockUntil && (
-          <p className="mt-4 hidden rounded-lg border border-[var(--hairline)] px-2.5 py-2 text-[11px] leading-relaxed text-[var(--text-muted)] lg:block">
-            <span aria-hidden className="mr-1">
-              🔒
+          <p
+            title={`Periode terkunci sampai ${lockUntil}`}
+            className="sb-row mt-4 hidden items-center gap-1.5 rounded-lg border border-[var(--hairline)] px-2.5 py-2 text-[11px] leading-relaxed text-[var(--text-muted)] lg:flex"
+          >
+            <span aria-hidden>🔒</span>
+            <span className="sb-expanded-only">
+              Terkunci s/d <span className="tnum">{lockUntil}</span>
             </span>
-            Terkunci s/d <span className="tnum">{lockUntil}</span>
           </p>
         )}
 
