@@ -9,12 +9,20 @@ export default function UserMenu({
   user: SessionUser;
   compact?: boolean;
 }) {
+  const ROLE = {
+    owner: { label: "Owner", hint: "Akses penuh, tidak bisa dibatasi" },
+    admin: { label: "Admin", hint: "Izinnya diatur owner" },
+    staff: { label: "Staff", hint: "Izinnya diatur owner" },
+  } as const;
+  const r = ROLE[user.role];
+
   const badge = (
     <span
       className="rounded-full border border-[var(--hairline)] px-1.5 py-px text-[10px] font-medium text-[var(--text-muted)]"
-      title={user.role === "admin" ? "Bisa ubah & hapus langsung" : "Perubahan lewat pengajuan"}
+      title={r.hint}
     >
-      {user.role === "admin" ? "Admin" : "Staff"}
+      {user.role === "owner" ? "👑 " : ""}
+      {r.label}
     </span>
   );
 

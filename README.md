@@ -52,21 +52,29 @@ Saldo dompet adalah **satu kolam bersama**, bukan per brand. Yang dilaporkan per
 brand adalah besar pemakaiannya, termasuk matriks brand × kategori di halaman
 Laporan. Budget bulanan bisa dipasang di dua tingkat: per brand dan per kategori.
 
-## Peran
+## Peran & izin
 
-| | Staff | Admin |
-|---|---|---|
-| Catat transaksi | ✅ langsung | ✅ langsung |
-| Unggah bukti | ✅ | ✅ |
-| Ubah transaksi | lewat pengajuan | ✅ langsung |
-| Hapus transaksi | lewat pengajuan | ✅ langsung |
-| Hapus bukti | hanya yang dia unggah | ✅ semua |
-| Setujui/tolak pengajuan | ✕ | ✅ |
-| Kelola brand & kategori | ✕ | ✅ |
-| Kelola akun, kunci periode, log | ✕ | ✅ |
+Tiga peran: **Owner**, **Admin**, **Staff**. Akun pertama yang dibuat otomatis
+jadi Owner.
 
-Pengajuan staff **tidak menyentuh data** sampai admin menyetujui. Halaman
-Pengajuan menampilkan perbandingan nilai sekarang vs yang diusulkan, beserta
+Yang menentukan boleh-tidaknya sebuah aksi bukan nama perannya, tapi **izin**.
+Ada 12 izin — catat transaksi, ubah langsung, hapus langsung, unggah bukti,
+hapus bukti milik siapa pun, putuskan pengajuan, kelola brand, kelola kategori,
+kunci periode, kelola akun, lihat log, ekspor CSV.
+
+- **Owner** selalu memegang seluruh izin dan tidak bisa dibatasi.
+- **Admin** dan **Staff** memakai izin default per peran, yang bisa diubah
+  Owner di **Admin → Peran & izin**.
+- Tiap akun bisa diberi **izin khusus** yang menimpa default perannya, di
+  **Admin → Akun → Kelola**.
+
+Default bawaan: Admin memegang semua kecuali *Kelola akun*; Staff hanya *Catat
+transaksi* dan *Unggah bukti*.
+
+Kalau sebuah akun tidak punya izin **ubah** atau **hapus**, aksi itu otomatis
+berubah jadi **pengajuan** yang menunggu keputusan pemegang izin *Putuskan
+pengajuan*. Pengajuan **tidak menyentuh data** sampai disetujui, dan halaman
+Pengajuan menampilkan perbandingan nilai sekarang vs yang diusulkan beserta
 alasannya.
 
 ## Kunci periode
@@ -94,9 +102,12 @@ menembus periode yang sudah dikunci setelahnya.
   Component dan Server Action; klien hanya menerima hasil yang memang boleh dia
   lihat. Tidak ada kunci database di sisi klien, jadi tidak ada RLS yang perlu
   dikonfigurasi dan tidak ada SQL editor di panel admin.
-- Semua server action memeriksa peran dan kunci periode di server — bukan hanya
+- Semua server action memeriksa izin dan kunci periode di server — bukan hanya
   menyembunyikan tombol di UI.
-- Setiap aksi penting tercatat di log aktivitas (Admin → Log aktivitas).
+- Hanya Owner yang bisa mengangkat Owner baru atau menyentuh akun Owner, dan
+  Owner aktif terakhir tidak bisa diturunkan atau dihapus.
+- Setiap aksi penting tercatat di log aktivitas, lengkap dengan filter pengguna,
+  aksi, dan rentang tanggal (Admin → Log aktivitas).
 
 ## Fitur lain
 

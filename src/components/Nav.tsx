@@ -2,27 +2,36 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { Role } from "@/lib/types";
 
-const LINKS: Array<{ href: string; label: string; adminOnly?: boolean }> = [
+export interface NavAccess {
+  manageCategory: boolean;
+  adminSection: boolean;
+}
+
+const LINKS: Array<{
+  href: string;
+  label: string;
+  needs?: keyof NavAccess;
+}> = [
   { href: "/", label: "Dashboard" },
   { href: "/transaksi", label: "Transaksi" },
   { href: "/brand", label: "Brand" },
-  { href: "/kategori", label: "Kategori & Budget", adminOnly: true },
+  { href: "/kategori", label: "Kategori & Budget", needs: "manageCategory" },
   { href: "/laporan", label: "Laporan" },
   { href: "/pengajuan", label: "Pengajuan" },
-  { href: "/admin", label: "Admin", adminOnly: true },
+  { href: "/admin", label: "Admin", needs: "adminSection" },
 ];
 
 export default function Nav({
-  role,
+  access,
   pending,
 }: {
-  role: Role;
+  /** Dihitung di server dari izin efektif, bukan dari nama peran. */
+  access: NavAccess;
   pending: number;
 }) {
   const pathname = usePathname();
-  const links = LINKS.filter((l) => !l.adminOnly || role === "admin");
+  const links = LINKS.filter((l) => !l.needs || access[l.needs]);
 
   return (
     <nav className="mt-4 flex gap-1 overflow-x-auto lg:mt-6 lg:flex-col lg:overflow-visible">

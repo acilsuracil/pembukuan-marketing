@@ -3,7 +3,7 @@ import { connection } from "next/server";
 import Nav from "@/components/Nav";
 import ThemeToggle from "@/components/ThemeToggle";
 import UserMenu from "@/components/UserMenu";
-import { getLockUntil } from "@/lib/policy";
+import { canOpenAdmin, getLockUntil, hasPerm } from "@/lib/policy";
 import { countUsers, pendingRequestCount } from "@/lib/queries";
 import { getUser } from "@/lib/session";
 
@@ -18,8 +18,12 @@ export default async function AppLayout({
   const user = await getUser();
   if (!user) redirect("/login");
 
-  const pending = user.role === "admin" ? pendingRequestCount() : 0;
+  const pending = hasPerm(user, "approveRequest") ? pendingRequestCount() : 0;
   const lockUntil = getLockUntil();
+  const access = {
+    manageCategory: hasPerm(user, "manageCategory"),
+    adminSection: canOpenAdmin(user),
+  };
 
   return (
     <div className="mx-auto flex min-h-screen max-w-[1400px] flex-col gap-6 px-4 py-6 lg:flex-row lg:gap-8 lg:px-8">
@@ -46,7 +50,7 @@ export default async function AppLayout({
           </div>
         </div>
 
-        <Nav role={user.role} pending={pending} />
+        <Nav access={access} pending={pending} />
 
         {lockUntil && (
           <p className="mt-4 hidden rounded-lg border border-[var(--hairline)] px-2.5 py-2 text-[11px] leading-relaxed text-[var(--text-muted)] lg:block">

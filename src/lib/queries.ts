@@ -533,20 +533,23 @@ export interface UserWithPresence extends User {
  */
 export function listUsers(): UserWithPresence[] {
   return all<UserWithPresence>(
-    `SELECT id, username, name, role, active, session_epoch,
+    `SELECT id, username, name, role, active, perms, session_epoch,
             pass_changed_at, last_seen_at, created_at,
             CASE
               WHEN last_seen_at IS NOT NULL
                AND (julianday('now') - julianday(replace(last_seen_at, 'Z', ''))) * 1440 < 5
               THEN 1 ELSE 0
             END AS online
-     FROM users ORDER BY active DESC, role, username COLLATE NOCASE`,
+     FROM users
+     ORDER BY active DESC,
+              CASE role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
+              username COLLATE NOCASE`,
   );
 }
 
 export function getUserById(id: number): User | undefined {
   return one<User>(
-    `SELECT id, username, name, role, active, session_epoch,
+    `SELECT id, username, name, role, active, perms, session_epoch,
             pass_changed_at, last_seen_at, created_at
      FROM users WHERE id = ?`,
     id,
@@ -566,11 +569,11 @@ export function countUsers(): number {
   return one<{ n: number }>(`SELECT COUNT(*) AS n FROM users`)?.n ?? 0;
 }
 
-export function countActiveAdmins(exceptId?: number): number {
+export function countActiveOwners(exceptId?: number): number {
   return (
     one<{ n: number }>(
       `SELECT COUNT(*) AS n FROM users
-       WHERE role = 'admin' AND active = 1 ${exceptId ? "AND id <> ?" : ""}`,
+       WHERE role = 'owner' AND active = 1 ${exceptId ? "AND id <> ?" : ""}`,
       ...(exceptId ? [exceptId] : []),
     )?.n ?? 0
   );
@@ -578,10 +581,68 @@ export function countActiveAdmins(exceptId?: number): number {
 
 /* ----------------------------------------------------------- log aktivitas */
 
-export function listActivity(limit = 100): ActivityRow[] {
+export interface ActivityFilter {
+  username?: string;
+  action?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+}
+
+export function listActivity(f: ActivityFilter = {}): ActivityRow[] {
+  const parts: string[] = [];
+  const params: unknown[] = [];
+  if (f.username) {
+    parts.push("username = ?");
+    params.push(f.username);
+  }
+  if (f.action) {
+    parts.push("action = ?");
+    params.push(f.action);
+  }
+  // ts disimpan sebagai ISO penuh; dibandingkan pada bagian tanggalnya saja.
+  if (f.from) {
+    parts.push("substr(ts, 1, 10) >= ?");
+    params.push(f.from);
+  }
+  if (f.to) {
+    parts.push("substr(ts, 1, 10) <= ?");
+    params.push(f.to);
+  }
   return all<ActivityRow>(
-    `SELECT * FROM activity_log ORDER BY ts DESC, id DESC LIMIT ?`,
-    limit,
+    `SELECT * FROM activity_log
+     ${parts.length ? `WHERE ${parts.join(" AND ")}` : ""}
+     ORDER BY ts DESC, id DESC LIMIT ?`,
+    ...params,
+    Math.min(Number(f.limit) || 200, 1000),
+  );
+}
+
+/** Daftar aksi yang pernah tercatat — untuk mengisi dropdown filter. */
+export function activityActions(): string[] {
+  return all<{ action: string }>(
+    `SELECT DISTINCT action FROM activity_log ORDER BY action`,
+  ).map((r) => r.action);
+}
+
+export function activityUsernames(): string[] {
+  return all<{ username: string }>(
+    `SELECT DISTINCT username FROM activity_log
+     WHERE username <> '' ORDER BY username COLLATE NOCASE`,
+  ).map((r) => r.username);
+}
+
+/** Ringkasan per user untuk kartu telusur di halaman aktivitas. */
+export function activitySummary(): Array<{
+  username: string;
+  role: string;
+  n: number;
+  last_ts: string;
+}> {
+  return all(
+    `SELECT username, MAX(role) AS role, COUNT(*) AS n, MAX(ts) AS last_ts
+     FROM activity_log WHERE username <> ''
+     GROUP BY username ORDER BY n DESC`,
   );
 }
 

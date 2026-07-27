@@ -7,14 +7,16 @@ import {
   verifyToken,
 } from "./auth";
 import { one, run } from "./db";
-
-export type Role = "admin" | "staff";
+import { canOpenAdmin, hasPerm, type PermKey } from "./policy";
+import type { Role } from "./types";
 
 export interface SessionUser {
   id: number;
   username: string;
   name: string;
   role: Role;
+  /** Override izin per user (JSON mentah); dibaca lewat hasPerm(). */
+  perms: string | null;
   session_epoch: number;
 }
 
@@ -29,7 +31,7 @@ export async function getUser(): Promise<SessionUser | null> {
   if (!p) return null;
 
   const u = one<SessionUser & { active: number }>(
-    `SELECT id, username, name, role, active, session_epoch FROM users WHERE id = ?`,
+    `SELECT id, username, name, role, active, perms, session_epoch FROM users WHERE id = ?`,
     p.uid,
   );
   if (!u || !u.active || u.session_epoch !== p.e) return null;
@@ -39,6 +41,7 @@ export async function getUser(): Promise<SessionUser | null> {
     username: u.username,
     name: u.name,
     role: u.role,
+    perms: u.perms,
     session_epoch: u.session_epoch,
   };
 }
@@ -49,14 +52,17 @@ export async function requireUser(): Promise<SessionUser> {
   return u;
 }
 
-export async function requireAdmin(): Promise<SessionUser> {
+/** Menjaga halaman berdasarkan izin, bukan berdasarkan nama peran. */
+export async function requirePerm(key: PermKey): Promise<SessionUser> {
   const u = await requireUser();
-  if (u.role !== "admin") redirect("/?e=admin-only");
+  if (!hasPerm(u, key)) redirect("/?e=no-access");
   return u;
 }
 
-export function isAdmin(u: SessionUser | null): boolean {
-  return !!u && u.role === "admin";
+export async function requireAdminSection(): Promise<SessionUser> {
+  const u = await requireUser();
+  if (!canOpenAdmin(u)) redirect("/?e=no-access");
+  return u;
 }
 
 /* ------------------------------------------------------------------ cookie */

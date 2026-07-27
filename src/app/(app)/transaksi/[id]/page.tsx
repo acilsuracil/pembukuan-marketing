@@ -6,7 +6,7 @@ import DeleteTxButton from "@/components/DeleteTxButton";
 import { Badge } from "@/components/ui";
 import { fmtDate, fmtIdr, fmtRate, fmtUsdt } from "@/lib/format";
 import { seriesVar } from "@/lib/palette";
-import { isLocked } from "@/lib/policy";
+import { hasPerm, isLocked } from "@/lib/policy";
 import { attachmentsOf, getTransaction, pendingRequestFor } from "@/lib/queries";
 import { requireUser } from "@/lib/session";
 
@@ -24,7 +24,8 @@ export default async function DetailTransaksiPage({
   const bukti = attachmentsOf(t.id);
   const pending = pendingRequestFor(t.id);
   const locked = isLocked(t.date);
-  const isAdmin = user.role === "admin";
+  const canEdit = hasPerm(user, "edit");
+  const canDelete = hasPerm(user, "delete");
 
   const rows: Array<[string, React.ReactNode]> = [
     ["Tanggal", fmtDate(t.date)],
@@ -116,7 +117,7 @@ export default async function DetailTransaksiPage({
             Alasan: {pending.reason}
           </p>
           <Link href="/pengajuan" className="btn btn-ghost mt-3 text-xs">
-            {isAdmin ? "Tinjau pengajuan" : "Lihat pengajuan"}
+            {hasPerm(user, "approveRequest") ? "Tinjau pengajuan" : "Lihat pengajuan"}
           </Link>
         </section>
       )}
@@ -135,8 +136,8 @@ export default async function DetailTransaksiPage({
       <BuktiPanel
         txId={t.id}
         items={bukti}
-        canUpload={!locked}
-        isAdmin={isAdmin}
+        canUpload={!locked && hasPerm(user, "uploadBukti")}
+        canDeleteAny={hasPerm(user, "deleteAnyBukti")}
         currentUserId={user.id}
       />
 
@@ -149,14 +150,14 @@ export default async function DetailTransaksiPage({
         ) : (
           <>
             <Link href={`/transaksi/${t.id}/ubah`} className="btn btn-ghost text-xs">
-              {isAdmin ? "Ubah transaksi" : "Ajukan perubahan"}
+              {canEdit ? "Ubah transaksi" : "Ajukan perubahan"}
             </Link>
             {pending ? (
               <span className="text-xs text-[var(--text-muted)]">
                 Pengajuan lain harus diputuskan dulu sebelum bisa mengajukan ulang.
               </span>
             ) : (
-              <DeleteTxButton txId={t.id} role={user.role} />
+              <DeleteTxButton txId={t.id} canDeleteDirectly={canDelete} />
             )}
           </>
         )}

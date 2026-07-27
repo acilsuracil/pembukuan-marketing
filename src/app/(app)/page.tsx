@@ -27,6 +27,7 @@ import {
   runningBalance,
   type TxFilter,
 } from "@/lib/queries";
+import { hasPerm } from "@/lib/policy";
 import { requireUser } from "@/lib/session";
 
 type SP = Record<string, string | string[] | undefined>;
@@ -187,7 +188,7 @@ export default async function DashboardPage({
               manageHref={
                 brandBudgets.length > 0
                   ? "/brand"
-                  : user.role === "admin"
+                  : hasPerm(user, "manageCategory")
                     ? "/kategori"
                     : undefined
               }
@@ -199,7 +200,7 @@ export default async function DashboardPage({
               rows={budgets}
               periodLabel={monthLabelLong(month)}
               title="Budget per kategori"
-              manageHref={user.role === "admin" ? "/kategori" : undefined}
+              manageHref={hasPerm(user, "manageCategory") ? "/kategori" : undefined}
             />
           )}
 

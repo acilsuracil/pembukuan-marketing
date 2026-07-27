@@ -9,7 +9,7 @@ export default async function SetupPage() {
 
   return (
     <>
-      <h1 className="text-base font-semibold">Buat akun admin pertama</h1>
+      <h1 className="text-base font-semibold">Buat akun owner pertama</h1>
       <p className="mt-1 text-xs text-[var(--text-muted)]">
         Akun ini punya akses penuh: mengelola user, brand, kategori, mengunci
         periode, dan menyetujui pengajuan staff.

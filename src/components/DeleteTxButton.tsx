@@ -3,23 +3,23 @@
 import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useState } from "react";
 import { deleteTransaction, type ActionState } from "@/app/actions";
-import type { Role } from "@/lib/types";
 import { Alert, FormButton } from "./ui";
 
 const EMPTY: ActionState = { ok: false };
 
 export default function DeleteTxButton({
   txId,
-  role,
+  canDeleteDirectly,
   disabled,
 }: {
   txId: number;
-  role: Role;
+  /** Punya izin "delete"; kalau tidak, tombolnya jadi pengajuan. */
+  canDeleteDirectly: boolean;
   disabled?: boolean;
 }) {
   const router = useRouter();
   const [state, action] = useActionState(deleteTransaction, EMPTY);
-  const isStaff = role === "staff";
+  const isStaff = !canDeleteDirectly;
   const [wantOpen, setWantOpen] = useState(false);
   // Panel ditutup dengan menurunkannya dari hasil aksi, bukan lewat setState
   // di dalam effect — supaya tidak memicu render bertingkat.

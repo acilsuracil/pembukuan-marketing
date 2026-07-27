@@ -4,6 +4,7 @@ import { CancelRequest, DecideRequest } from "@/components/RequestActions";
 import { Badge } from "@/components/ui";
 import { fmtDate, fmtIdr, fmtRate, fmtUsdt } from "@/lib/format";
 import { getBrand, getCategory, listRequests } from "@/lib/queries";
+import { hasPerm } from "@/lib/policy";
 import { requireUser } from "@/lib/session";
 import type { ChangeRequest, TxRow } from "@/lib/types";
 
@@ -177,9 +178,8 @@ function RequestCard({
 export default async function PengajuanPage() {
   await connection();
   const user = await requireUser();
-  const isAdmin = user.role === "admin";
-
-  // Admin melihat semua; staff hanya pengajuannya sendiri.
+  // Yang boleh memutus melihat semua; sisanya hanya pengajuannya sendiri.
+  const isAdmin = hasPerm(user, "approveRequest");
   const all = listRequests(isAdmin ? {} : { requestedBy: user.id, limit: 100 });
   const pending = all.filter((r) => r.status === "pending");
   const decided = all.filter((r) => r.status !== "pending").slice(0, 30);

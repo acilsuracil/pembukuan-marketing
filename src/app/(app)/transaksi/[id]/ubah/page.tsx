@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import TxForm from "@/components/TxForm";
 import { fmtDate } from "@/lib/format";
-import { isLocked } from "@/lib/policy";
+import { hasPerm, isLocked } from "@/lib/policy";
 import {
   getTransaction,
   incomeRates,
@@ -37,7 +37,7 @@ export default async function UbahTransaksiPage({
           ← Kembali ke detail transaksi
         </Link>
         <h1 className="mt-1 text-xl font-semibold tracking-tight">
-          {user.role === "admin" ? "Ubah transaksi" : "Ajukan perubahan"}
+          {hasPerm(user, "edit") ? "Ubah transaksi" : "Ajukan perubahan"}
         </h1>
         <p className="mt-0.5 text-sm text-[var(--text-muted)]">
           #{t.id} · dicatat {fmtDate(t.date)}
@@ -72,7 +72,7 @@ export default async function UbahTransaksiPage({
             brands={listBrands(true)}
             inRates={incomeRates()}
             initial={t}
-            role={user.role}
+            canEditDirectly={hasPerm(user, "edit")}
           />
         </section>
       )}

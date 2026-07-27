@@ -10,7 +10,7 @@ import {
   type ActionState,
 } from "@/app/actions";
 import { fmtIdr, fmtRate, todayISO } from "@/lib/format";
-import type { Brand, Category, Role, TxRow } from "@/lib/types";
+import type { Brand, Category, TxRow } from "@/lib/types";
 
 const EMPTY: ActionState = { ok: false };
 
@@ -28,19 +28,19 @@ export default function TxForm({
   brands,
   inRates,
   initial,
-  role,
+  canEditDirectly,
 }: {
   categories: Category[];
   brands: Brand[];
   /** Riwayat kurs pemasukan, terurut menaik — untuk pratinjau kurs warisan. */
   inRates: Array<{ date: string; rate: number }>;
   initial?: TxRow;
-  role: Role;
+  /** Punya izin "edit"; kalau tidak, perubahan jadi pengajuan. */
+  canEditDirectly: boolean;
 }) {
   const router = useRouter();
   const editing = Boolean(initial);
-  const isStaff = role === "staff";
-  const needsRequest = editing && isStaff;
+  const needsRequest = editing && !canEditDirectly;
 
   const [state, formAction] = useActionState(
     editing ? updateTransaction : createTransaction,
@@ -104,8 +104,8 @@ export default function TxForm({
           }}
         >
           <strong className="font-medium">Perubahan kamu akan diajukan.</strong>{" "}
-          Sebagai staff, ubahan ini tidak langsung menimpa data — admin yang
-          memutuskan disetujui atau tidak.
+          Akunmu tidak punya izin mengubah langsung, jadi ubahan ini tidak
+          menimpa data sampai disetujui.
         </p>
       )}
 

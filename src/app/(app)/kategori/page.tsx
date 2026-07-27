@@ -6,7 +6,7 @@ import DeleteMasterButton from "@/components/DeleteMasterButton";
 import { currentMonth, fmtUsdt, monthLabelLong } from "@/lib/format";
 import { seriesVar } from "@/lib/palette";
 import { categoriesWithStats, getCategory } from "@/lib/queries";
-import { requireAdmin } from "@/lib/session";
+import { requirePerm } from "@/lib/session";
 
 type SP = Record<string, string | string[] | undefined>;
 
@@ -16,7 +16,7 @@ export default async function KategoriPage({
   searchParams: Promise<SP>;
 }) {
   await connection();
-  await requireAdmin();
+  await requirePerm("manageCategory");
 
   const sp = await searchParams;
   const editRaw = Array.isArray(sp.edit) ? sp.edit[0] : sp.edit;

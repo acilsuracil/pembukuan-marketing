@@ -6,6 +6,7 @@ import DeleteMasterButton from "@/components/DeleteMasterButton";
 import { currentMonth, fmtDate, fmtIdr, fmtUsdt, monthLabelLong } from "@/lib/format";
 import { seriesVar } from "@/lib/palette";
 import { brandsWithStats, getBrand } from "@/lib/queries";
+import { hasPerm } from "@/lib/policy";
 import { requireUser } from "@/lib/session";
 
 type SP = Record<string, string | string[] | undefined>;
@@ -17,7 +18,7 @@ export default async function BrandPage({
 }) {
   await connection();
   const user = await requireUser();
-  const isAdmin = user.role === "admin";
+  const isAdmin = hasPerm(user, "manageBrand");
 
   const sp = await searchParams;
   const editRaw = Array.isArray(sp.edit) ? sp.edit[0] : sp.edit;

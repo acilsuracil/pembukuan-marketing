@@ -7,18 +7,20 @@ import { run, setSetting, tx as inTransaction } from "@/lib/db";
 import { deleteObject, putObject } from "@/lib/storage";
 import { SLOT_COUNT } from "@/lib/palette";
 import {
-  canDecideRequests,
-  canEditDirectly,
-  canManageMaster,
+  hasPerm,
   isLocked,
+  isOwner,
   lockError,
   logActivity,
+  PERM_KEYS,
+  setRolePerms,
+  type PermMap,
 } from "@/lib/policy";
 import {
   attachmentsOf,
   brandUsage,
   categoryUsage,
-  countActiveAdmins,
+  countActiveOwners,
   getAttachment,
   getRequest,
   getTransaction,
@@ -34,7 +36,14 @@ export interface ActionState {
 }
 
 const DENIED: ActionState = { ok: false, error: "Sesi berakhir. Silakan login lagi." };
-const NOT_ADMIN: ActionState = { ok: false, error: "Hanya admin yang bisa melakukan ini." };
+const NO_ACCESS: ActionState = {
+  ok: false,
+  error: "Akun kamu tidak punya izin untuk melakukan ini.",
+};
+const OWNER_ONLY: ActionState = {
+  ok: false,
+  error: "Hanya owner yang bisa melakukan ini.",
+};
 
 /** Menerima "16250", "16.250", "16250,5" maupun "16250.5". */
 function parseNum(raw: FormDataEntryValue | null): number | null {
@@ -206,6 +215,7 @@ export async function createTransaction(
 ): Promise<ActionState> {
   const me = await authed();
   if (!me) return DENIED;
+  if (!hasPerm(me, "add")) return NO_ACCESS;
 
   const parsed = readTx(fd);
   if (!parsed.ok) return { ok: false, error: parsed.error };
@@ -271,7 +281,7 @@ export async function updateTransaction(
   if (isLocked(current.date)) return { ok: false, error: lockError(current.date) };
   if (isLocked(v.date)) return { ok: false, error: lockError(v.date) };
 
-  if (!canEditDirectly(me)) {
+  if (!hasPerm(me, "edit")) {
     if (pendingRequestFor(id))
       return { ok: false, error: "Transaksi ini sudah punya pengajuan yang menunggu keputusan." };
     const reason = str(fd, "reason");
@@ -333,7 +343,7 @@ export async function deleteTransaction(
   if (!current) return { ok: false, error: "Transaksi tidak ditemukan." };
   if (isLocked(current.date)) return { ok: false, error: lockError(current.date) };
 
-  if (!canEditDirectly(me)) {
+  if (!hasPerm(me, "delete")) {
     if (pendingRequestFor(id))
       return { ok: false, error: "Transaksi ini sudah punya pengajuan yang menunggu keputusan." };
     const reason = str(fd, "reason");
@@ -371,6 +381,7 @@ export async function addBukti(
 ): Promise<ActionState> {
   const me = await authed();
   if (!me) return DENIED;
+  if (!hasPerm(me, "uploadBukti")) return NO_ACCESS;
 
   const id = Number(str(fd, "tx_id"));
   const t = getTransaction(id);
@@ -399,8 +410,11 @@ export async function deleteBukti(
 
   const t = getTransaction(att.tx_id);
   if (t && isLocked(t.date)) return { ok: false, error: lockError(t.date) };
-  if (!canEditDirectly(me) && att.uploaded_by !== me.id)
-    return { ok: false, error: "Hanya admin atau pengunggahnya yang bisa menghapus bukti ini." };
+  if (!hasPerm(me, "deleteAnyBukti") && att.uploaded_by !== me.id)
+    return {
+      ok: false,
+      error: "Kamu hanya bisa menghapus bukti yang kamu unggah sendiri.",
+    };
 
   await deleteObject(att.stored_name, att.storage);
   run(`DELETE FROM attachments WHERE id = ?`, att.id);
@@ -418,7 +432,7 @@ export async function decideRequest(
 ): Promise<ActionState> {
   const me = await authed();
   if (!me) return DENIED;
-  if (!canDecideRequests(me)) return NOT_ADMIN;
+  if (!hasPerm(me, "approveRequest")) return NO_ACCESS;
 
   const id = Number(str(fd, "id"));
   const decision = str(fd, "decision");
@@ -508,7 +522,7 @@ export async function cancelRequest(
   const rq = getRequest(id);
   if (!rq) return { ok: false, error: "Pengajuan tidak ditemukan." };
   if (rq.status !== "pending") return { ok: false, error: "Pengajuan sudah diputuskan." };
-  if (rq.requested_by !== me.id && !canDecideRequests(me))
+  if (rq.requested_by !== me.id && !hasPerm(me, "approveRequest"))
     return { ok: false, error: "Hanya pengaju atau admin yang bisa membatalkan." };
 
   run(`DELETE FROM requests WHERE id = ?`, id);
@@ -526,7 +540,7 @@ export async function saveBrand(
 ): Promise<ActionState> {
   const me = await authed();
   if (!me) return DENIED;
-  if (!canManageMaster(me)) return NOT_ADMIN;
+  if (!hasPerm(me, "manageBrand")) return NO_ACCESS;
 
   const idRaw = str(fd, "id");
   const id = idRaw === "" ? null : Number(idRaw);
@@ -566,7 +580,7 @@ export async function saveBrand(
 
 export async function toggleArchiveBrand(fd: FormData): Promise<void> {
   const me = await authed();
-  if (!me || !canManageMaster(me)) return;
+  if (!me || !hasPerm(me, "manageBrand")) return;
   const id = Number(str(fd, "id"));
   if (Number.isInteger(id) && id > 0) {
     run(`UPDATE brands SET archived = 1 - archived WHERE id = ?`, id);
@@ -581,7 +595,7 @@ export async function deleteBrand(
 ): Promise<ActionState> {
   const me = await authed();
   if (!me) return DENIED;
-  if (!canManageMaster(me)) return NOT_ADMIN;
+  if (!hasPerm(me, "manageBrand")) return NO_ACCESS;
 
   const id = Number(str(fd, "id"));
   if (!Number.isInteger(id) || id <= 0) return { ok: false, error: "ID brand tidak valid." };
@@ -608,7 +622,7 @@ export async function saveCategory(
 ): Promise<ActionState> {
   const me = await authed();
   if (!me) return DENIED;
-  if (!canManageMaster(me)) return NOT_ADMIN;
+  if (!hasPerm(me, "manageCategory")) return NO_ACCESS;
 
   const idRaw = str(fd, "id");
   const id = idRaw === "" ? null : Number(idRaw);
@@ -654,7 +668,7 @@ export async function saveCategory(
 
 export async function toggleArchiveCategory(fd: FormData): Promise<void> {
   const me = await authed();
-  if (!me || !canManageMaster(me)) return;
+  if (!me || !hasPerm(me, "manageCategory")) return;
   const id = Number(str(fd, "id"));
   if (Number.isInteger(id) && id > 0) {
     run(`UPDATE categories SET archived = 1 - archived WHERE id = ?`, id);
@@ -669,7 +683,7 @@ export async function deleteCategory(
 ): Promise<ActionState> {
   const me = await authed();
   if (!me) return DENIED;
-  if (!canManageMaster(me)) return NOT_ADMIN;
+  if (!hasPerm(me, "manageCategory")) return NO_ACCESS;
 
   const id = Number(str(fd, "id"));
   if (!Number.isInteger(id) || id <= 0) return { ok: false, error: "ID kategori tidak valid." };
@@ -696,7 +710,7 @@ export async function setLock(
 ): Promise<ActionState> {
   const me = await authed();
   if (!me) return DENIED;
-  if (!canManageMaster(me)) return NOT_ADMIN;
+  if (!hasPerm(me, "lockPeriod")) return NO_ACCESS;
 
   const value = str(fd, "lock_until");
   if (value !== "" && !/^\d{4}-\d{2}-\d{2}$/.test(value))
@@ -720,7 +734,7 @@ export async function createUser(
 ): Promise<ActionState> {
   const me = await authed();
   if (!me) return DENIED;
-  if (!canManageMaster(me)) return NOT_ADMIN;
+  if (!hasPerm(me, "manageUsers")) return NO_ACCESS;
 
   const username = str(fd, "username").toLowerCase();
   const role = str(fd, "role");
@@ -728,8 +742,11 @@ export async function createUser(
 
   if (!/^[a-z0-9._-]{3,32}$/.test(username))
     return { ok: false, error: "Username 3–32 karakter: huruf kecil, angka, titik, garis bawah, strip." };
-  if (role !== "admin" && role !== "staff")
+  if (role !== "owner" && role !== "admin" && role !== "staff")
     return { ok: false, error: "Peran tidak valid." };
+  // Hanya owner yang boleh mencetak owner baru — kalau tidak, admin dengan izin
+  // kelola akun bisa mengangkat dirinya sendiri jadi owner.
+  if (role === "owner" && !isOwner(me)) return OWNER_ONLY;
   const pwErr = passwordProblem(password);
   if (pwErr) return { ok: false, error: pwErr };
 
@@ -758,7 +775,7 @@ export async function updateUser(
 ): Promise<ActionState> {
   const me = await authed();
   if (!me) return DENIED;
-  if (!canManageMaster(me)) return NOT_ADMIN;
+  if (!hasPerm(me, "manageUsers")) return NO_ACCESS;
 
   const id = Number(str(fd, "id"));
   const target = getUserById(id);
@@ -766,12 +783,18 @@ export async function updateUser(
 
   const role = str(fd, "role");
   const active = str(fd, "active") === "1" ? 1 : 0;
-  if (role !== "admin" && role !== "staff") return { ok: false, error: "Peran tidak valid." };
+  if (role !== "owner" && role !== "admin" && role !== "staff")
+    return { ok: false, error: "Peran tidak valid." };
 
-  // Jangan sampai admin aktif terakhir hilang — aplikasi jadi tak bisa dikelola.
-  const losingAdmin = target.role === "admin" && (role !== "admin" || active === 0);
-  if (losingAdmin && countActiveAdmins(target.id) === 0)
-    return { ok: false, error: "Ini admin aktif terakhir. Angkat admin lain dulu." };
+  // Akun owner hanya boleh disentuh owner, dan hanya owner yang bisa
+  // mengangkat owner baru.
+  if (target.role === "owner" && !isOwner(me)) return OWNER_ONLY;
+  if (role === "owner" && !isOwner(me)) return OWNER_ONLY;
+
+  // Jangan sampai owner aktif terakhir hilang — aplikasi jadi tak bisa dikelola.
+  const losingOwner = target.role === "owner" && (role !== "owner" || active === 0);
+  if (losingOwner && countActiveOwners(target.id) === 0)
+    return { ok: false, error: "Ini owner aktif terakhir. Angkat owner lain dulu." };
   if (target.id === me.id && active === 0)
     return { ok: false, error: "Tidak bisa menonaktifkan akun sendiri." };
 
@@ -795,11 +818,12 @@ export async function resetUserPassword(
 ): Promise<ActionState> {
   const me = await authed();
   if (!me) return DENIED;
-  if (!canManageMaster(me)) return NOT_ADMIN;
+  if (!hasPerm(me, "manageUsers")) return NO_ACCESS;
 
   const id = Number(str(fd, "id"));
   const target = getUserById(id);
   if (!target) return { ok: false, error: "Akun tidak ditemukan." };
+  if (target.role === "owner" && !isOwner(me)) return OWNER_ONLY;
 
   const password = String(fd.get("password") ?? "");
   const pwErr = passwordProblem(password);
@@ -827,18 +851,87 @@ export async function deleteUser(
 ): Promise<ActionState> {
   const me = await authed();
   if (!me) return DENIED;
-  if (!canManageMaster(me)) return NOT_ADMIN;
+  if (!hasPerm(me, "manageUsers")) return NO_ACCESS;
 
   const id = Number(str(fd, "id"));
   const target = getUserById(id);
   if (!target) return { ok: false, error: "Akun tidak ditemukan." };
   if (target.id === me.id) return { ok: false, error: "Tidak bisa menghapus akun sendiri." };
-  if (target.role === "admin" && countActiveAdmins(target.id) === 0)
-    return { ok: false, error: "Ini admin aktif terakhir." };
+  if (target.role === "owner" && !isOwner(me)) return OWNER_ONLY;
+  if (target.role === "owner" && countActiveOwners(target.id) === 0)
+    return { ok: false, error: "Ini owner aktif terakhir." };
 
   run(`DELETE FROM users WHERE id = ?`, id);
   logActivity(me, "hapus-user", target.username);
   await touchSession(me);
   refresh();
   return { ok: true, message: `Akun ${target.username} dihapus.` };
+}
+
+/* ================================================================== izin */
+
+/** Membaca centang izin dari form; kunci yang tak dicentang berarti dimatikan. */
+function readPerms(fd: FormData, prefix: string): PermMap {
+  const out: PermMap = {};
+  for (const k of PERM_KEYS) out[k] = fd.get(`${prefix}${k}`) === "on";
+  return out;
+}
+
+/** Override izin satu akun. Kosongkan untuk mengembalikannya ke default peran. */
+export async function setUserPerms(
+  _prev: ActionState,
+  fd: FormData,
+): Promise<ActionState> {
+  const me = await authed();
+  if (!me) return DENIED;
+  if (!hasPerm(me, "manageUsers")) return NO_ACCESS;
+
+  const id = Number(str(fd, "id"));
+  const target = getUserById(id);
+  if (!target) return { ok: false, error: "Akun tidak ditemukan." };
+  if (target.role === "owner")
+    return { ok: false, error: "Owner selalu punya seluruh izin — tidak bisa dibatasi." };
+  if (!isOwner(me) && target.id === me.id)
+    return { ok: false, error: "Tidak bisa mengubah izin akun sendiri." };
+
+  const mode = str(fd, "mode");
+  if (mode === "reset") {
+    run(`UPDATE users SET perms = NULL WHERE id = ?`, id);
+    logActivity(me, "reset-izin", `${target.username} kembali ke default peran`);
+  } else {
+    run(`UPDATE users SET perms = ? WHERE id = ?`, JSON.stringify(readPerms(fd, "p_")), id);
+    logActivity(me, "ubah-izin", target.username);
+  }
+
+  await touchSession(me);
+  refresh();
+  return {
+    ok: true,
+    message:
+      mode === "reset"
+        ? `Izin ${target.username} dikembalikan ke default perannya.`
+        : `Izin ${target.username} disimpan.`,
+  };
+}
+
+/** Izin default tiap peran — hanya owner. */
+export async function saveRolePerms(
+  _prev: ActionState,
+  fd: FormData,
+): Promise<ActionState> {
+  const me = await authed();
+  if (!me) return DENIED;
+  if (!isOwner(me)) return OWNER_ONLY;
+
+  setRolePerms({
+    admin: readPerms(fd, "admin_"),
+    staff: readPerms(fd, "staff_"),
+  });
+  logActivity(me, "ubah-izin-peran", "Mengubah izin default admin/staff");
+  await touchSession(me);
+  refresh();
+  return {
+    ok: true,
+    message: "Izin default disimpan. Akun dengan izin khusus tidak ikut berubah.",
+  };
 }

@@ -1,5 +1,5 @@
 export type TxType = "in" | "out";
-export type Role = "admin" | "staff";
+export type Role = "owner" | "admin" | "staff";
 
 export interface Category {
   id: number;
@@ -29,6 +29,8 @@ export interface User {
   name: string;
   role: Role;
   active: number;
+  /** Override izin per user dalam bentuk JSON; null = ikut default peran. */
+  perms: string | null;
   session_epoch: number;
   pass_changed_at: string | null;
   last_seen_at: string | null;

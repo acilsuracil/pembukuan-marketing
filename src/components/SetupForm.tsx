@@ -11,7 +11,7 @@ function Submit() {
   const { pending } = useFormStatus();
   return (
     <button type="submit" className="btn btn-primary w-full" disabled={pending}>
-      {pending ? "Membuat…" : "Buat akun admin"}
+      {pending ? "Membuat…" : "Buat akun owner"}
     </button>
   );
 }

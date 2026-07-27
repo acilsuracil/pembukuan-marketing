@@ -57,7 +57,7 @@ export async function doSetup(
   const now = new Date().toISOString();
   run(
     `INSERT INTO users (username, pass_hash, name, role, active, pass_changed_at, created_at)
-     VALUES (?, ?, ?, 'admin', 1, ?, ?)`,
+     VALUES (?, ?, ?, 'owner', 1, ?, ?)`,
     username,
     await hashPassword(password),
     name || username,
@@ -67,15 +67,16 @@ export async function doSetup(
 
   const u = getUserWithHash(username)!;
   logActivity(
-    { id: u.id, username: u.username, role: "admin" },
+    { id: u.id, username: u.username, role: "owner" },
     "setup",
-    "Membuat admin pertama",
+    "Membuat akun owner pertama",
   );
   await startSession({
     id: u.id,
     username: u.username,
     name: u.name,
-    role: "admin",
+    role: "owner",
+    perms: null,
     session_epoch: u.session_epoch,
   });
   redirect("/");
@@ -118,6 +119,7 @@ export async function doLogin(
     username: u.username,
     name: u.name,
     role: u.role,
+    perms: u.perms,
     session_epoch: u.session_epoch,
   });
   redirect("/");
@@ -172,6 +174,7 @@ export async function changeOwnPassword(
     username: fresh.username,
     name: fresh.name,
     role: fresh.role,
+    perms: fresh.perms,
     session_epoch: fresh.session_epoch,
   });
   return { ok: true, message: "Password diganti. Sesi di perangkat lain otomatis keluar." };

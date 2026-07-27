@@ -72,7 +72,7 @@ function secret(): string {
 export interface TokenPayload {
   uid: number;
   u: string;
-  r: "admin" | "staff";
+  r: "owner" | "admin" | "staff";
   /** session_epoch pemilik token — dinaikkan untuk mematikan sesi lama. */
   e: number;
   iat: number;
@@ -115,7 +115,7 @@ export function verifyToken(token: string | undefined): TokenPayload | null {
 }
 
 export function newToken(
-  user: { id: number; username: string; role: "admin" | "staff"; session_epoch: number },
+  user: { id: number; username: string; role: "owner" | "admin" | "staff"; session_epoch: number },
   iat = Date.now(),
 ): string {
   return signToken({

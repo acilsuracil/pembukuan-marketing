@@ -31,7 +31,7 @@ export default function Bukti({
   txId,
   items,
   canUpload,
-  isAdmin,
+  canDeleteAny,
   currentUserId,
 }: {
   txId: number;
@@ -41,10 +41,10 @@ export default function Bukti({
    * Kewenangan dikirim sebagai data, bukan fungsi — Server Component tidak
    * boleh meneruskan fungsi ke Client Component.
    */
-  isAdmin: boolean;
+  canDeleteAny: boolean;
   currentUserId: number;
 }) {
-  const canDelete = (a: Attachment) => isAdmin || a.uploaded_by === currentUserId;
+  const canDelete = (a: Attachment) => canDeleteAny || a.uploaded_by === currentUserId;
   const router = useRouter();
   const [state, action] = useActionState(addBukti, EMPTY);
   const [picked, setPicked] = useState(0);

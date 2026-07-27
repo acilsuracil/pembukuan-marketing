@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { connection } from "next/server";
 import TxForm from "@/components/TxForm";
-import { getLockUntil } from "@/lib/policy";
+import { getLockUntil, hasPerm } from "@/lib/policy";
 import { incomeRates, listBrands, listCategories } from "@/lib/queries";
 import { requireUser } from "@/lib/session";
 
@@ -37,7 +37,7 @@ export default async function TransaksiBaruPage() {
             satu brand sebelum mencatat transaksi.
           </p>
           <Link href="/brand" className="btn btn-primary mt-5">
-            {user.role === "admin" ? "Buat brand" : "Lihat halaman brand"}
+            {hasPerm(user, "manageBrand") ? "Buat brand" : "Lihat halaman brand"}
           </Link>
         </section>
       ) : (
@@ -46,7 +46,7 @@ export default async function TransaksiBaruPage() {
             categories={listCategories()}
             brands={brands}
             inRates={incomeRates()}
-            role={user.role}
+            canEditDirectly={hasPerm(user, "edit")}
           />
         </section>
       )}

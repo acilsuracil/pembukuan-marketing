@@ -19,6 +19,77 @@ function addColumn(db: DatabaseSync, table: string, col: string, def: string) {
   db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
 }
 
+/**
+ * Peran `owner` menyusul setelah rilis pertama. CHECK constraint tidak bisa
+ * diubah lewat ALTER TABLE di SQLite, jadi tabelnya dibangun ulang. Referensi
+ * foreign key dari tabel lain mengacu pada nama tabel, sehingga tetap utuh
+ * setelah rename.
+ */
+function upgradeUserRoles(db: DatabaseSync) {
+  const ddl = (
+    db
+      .prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='users'`)
+      .get() as { sql?: string } | undefined
+  )?.sql;
+  if (!ddl || ddl.includes("'owner'")) {
+    promoteFirstOwner(db);
+    return;
+  }
+
+  db.exec("PRAGMA foreign_keys = OFF");
+  db.exec("BEGIN");
+  try {
+    db.exec(`
+      -- tx_view mengacu ke users; selama view-nya ada, tabelnya tidak bisa
+      -- dibuang. View ini dibuat ulang tepat setelah migrasi, di migrate().
+      DROP VIEW IF EXISTS tx_view;
+
+      CREATE TABLE users_migrated (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        username        TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+        pass_hash       TEXT    NOT NULL,
+        name            TEXT    NOT NULL DEFAULT '',
+        role            TEXT    NOT NULL CHECK (role IN ('owner','admin','staff')) DEFAULT 'staff',
+        active          INTEGER NOT NULL DEFAULT 1,
+        perms           TEXT,
+        session_epoch   INTEGER NOT NULL DEFAULT 1,
+        pass_changed_at TEXT,
+        last_seen_at    TEXT,
+        created_at      TEXT    NOT NULL
+      );
+      INSERT INTO users_migrated
+        (id, username, pass_hash, name, role, active, perms,
+         session_epoch, pass_changed_at, last_seen_at, created_at)
+      SELECT id, username, pass_hash, name, role, active, perms,
+             session_epoch, pass_changed_at, last_seen_at, created_at
+      FROM users;
+      DROP TABLE users;
+      ALTER TABLE users_migrated RENAME TO users;
+    `);
+    db.exec("COMMIT");
+  } catch (e) {
+    db.exec("ROLLBACK");
+    throw e;
+  } finally {
+    db.exec("PRAGMA foreign_keys = ON");
+  }
+  promoteFirstOwner(db);
+}
+
+/** Instalasi lama tidak punya owner — akun paling awal yang diangkat. */
+function promoteFirstOwner(db: DatabaseSync) {
+  const owners = (
+    db.prepare(`SELECT COUNT(*) AS n FROM users WHERE role = 'owner'`).get() as {
+      n: number;
+    }
+  ).n;
+  if (owners > 0) return;
+  const first = db
+    .prepare(`SELECT id FROM users ORDER BY id LIMIT 1`)
+    .get() as { id: number } | undefined;
+  if (first) db.prepare(`UPDATE users SET role = 'owner' WHERE id = ?`).run(first.id);
+}
+
 function migrate(db: DatabaseSync) {
   db.exec(`
     PRAGMA journal_mode = WAL;
@@ -51,8 +122,10 @@ function migrate(db: DatabaseSync) {
       username        TEXT    NOT NULL UNIQUE COLLATE NOCASE,
       pass_hash       TEXT    NOT NULL,
       name            TEXT    NOT NULL DEFAULT '',
-      role            TEXT    NOT NULL CHECK (role IN ('admin','staff')) DEFAULT 'staff',
+      role            TEXT    NOT NULL CHECK (role IN ('owner','admin','staff')) DEFAULT 'staff',
       active          INTEGER NOT NULL DEFAULT 1,
+      -- Override izin per user (JSON). NULL = ikut default perannya.
+      perms           TEXT,
       -- Dinaikkan saat password diganti / akun dinonaktifkan; token lama otomatis mati.
       session_epoch   INTEGER NOT NULL DEFAULT 1,
       pass_changed_at TEXT,
@@ -132,6 +205,8 @@ function migrate(db: DatabaseSync) {
   addColumn(db, "transactions", "brand_id", "INTEGER REFERENCES brands(id) ON DELETE SET NULL");
   addColumn(db, "transactions", "created_by", "INTEGER REFERENCES users(id) ON DELETE SET NULL");
   addColumn(db, "transactions", "updated_at", "TEXT");
+  addColumn(db, "users", "perms", "TEXT");
+  upgradeUserRoles(db);
   // Backend penyimpanan bukti per baris, supaya berkas lama di disk tetap
   // terbaca setelah pindah ke Supabase Storage.
   addColumn(db, "attachments", "storage", "TEXT NOT NULL DEFAULT 'local'");

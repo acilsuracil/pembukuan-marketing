@@ -1,150 +1,92 @@
+import { redirect } from "next/navigation";
 import { connection } from "next/server";
-import { CreateUserForm, LockForm, UserRow } from "@/components/AdminForms";
-import { getLockUntil } from "@/lib/policy";
-import { listActivity, listUsers } from "@/lib/queries";
-import { requireAdmin } from "@/lib/session";
+import LockForm from "@/components/admin/LockForm";
+import { fmtDate } from "@/lib/format";
+import { getLockUntil, hasPerm } from "@/lib/policy";
+import { requireUser } from "@/lib/session";
 import { storageStatus } from "@/lib/storage";
 
-export default async function AdminPage() {
+export default async function AdminPengaturanPage() {
   await connection();
-  const me = await requireAdmin();
+  const me = await requireUser();
 
-  const users = listUsers();
+  // Tab pertama butuh izin kunci periode; kalau user hanya punya izin admin
+  // lain, antar dia ke tab yang memang boleh dia buka.
+  if (!hasPerm(me, "lockPeriod")) {
+    if (hasPerm(me, "manageUsers")) redirect("/admin/pengguna");
+    if (hasPerm(me, "viewActivity")) redirect("/admin/aktivitas");
+    redirect("/?e=no-access");
+  }
+
   const lock = getLockUntil();
-  const log = listActivity(80);
   const storage = storageStatus();
+  const supa = storage.backend === "supabase";
 
   return (
-    <div className="max-w-4xl space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">Admin</h1>
-        <p className="mt-0.5 text-sm text-[var(--text-muted)]">
-          Kelola akun, kunci periode pembukuan, dan telusuri jejak aktivitas.
-        </p>
-      </div>
-
+    <div className="grid items-start gap-4 lg:grid-cols-2">
       <section className="card p-4 sm:p-5">
         <h2 className="text-sm font-semibold">Kunci periode</h2>
-        <p className="mt-0.5 mb-4 text-xs text-[var(--text-muted)]">
+        <p className="mt-0.5 text-xs text-[var(--text-muted)]">
           Setelah laporan suatu periode selesai dikerjakan, kunci tanggalnya
           supaya angkanya tidak berubah lagi di belakang hari.
-          {lock && (
-            <>
-              {" "}
-              Saat ini terkunci sampai{" "}
-              <strong className="tnum text-[var(--text-primary)]">{lock}</strong>.
-            </>
+        </p>
+
+        <p className="mt-3 flex items-center gap-2 rounded-lg border border-[var(--hairline)] px-3 py-2 text-sm">
+          <span aria-hidden>{lock ? "🔒" : "🔓"}</span>
+          {lock ? (
+            <span>
+              Terkunci sampai{" "}
+              <strong className="tnum">{fmtDate(lock)}</strong>
+            </span>
+          ) : (
+            <span className="text-[var(--text-secondary)]">
+              Tidak ada kunci aktif — semua periode masih bisa diubah.
+            </span>
           )}
         </p>
-        <LockForm current={lock} />
+
+        <div className="mt-4">
+          <LockForm current={lock} />
+        </div>
       </section>
 
       <section className="card p-4 sm:p-5">
         <h2 className="text-sm font-semibold">Penyimpanan bukti transfer</h2>
-        <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
-          <div>
+        <p className="mt-0.5 text-xs text-[var(--text-muted)]">
+          Tempat berkas bukti disimpan. Diatur lewat environment variable, bukan
+          dari sini.
+        </p>
+
+        <dl className="mt-4 text-sm">
+          <div className="flex items-center justify-between gap-3 border-b border-[var(--hairline)] py-2">
             <dt className="text-xs text-[var(--text-muted)]">Backend aktif</dt>
-            <dd className="mt-0.5 flex items-center gap-1.5 font-medium">
+            <dd className="flex items-center gap-1.5 font-medium">
               <span
                 aria-hidden
-                className="h-2 w-2 rounded-full"
                 style={{
-                  background:
-                    storage.backend === "supabase"
-                      ? "var(--status-good)"
-                      : "var(--status-warning)",
+                  color: supa ? "var(--success-text)" : "var(--status-warning)",
                 }}
-              />
-              {storage.backend === "supabase"
-                ? "Supabase Storage"
-                : "Disk lokal / volume"}
+              >
+                {supa ? "✓" : "⚠"}
+              </span>
+              {supa ? "Supabase Storage" : "Disk lokal / volume"}
             </dd>
           </div>
-          <div>
+          <div className="flex items-center justify-between gap-3 border-b border-[var(--hairline)] py-2">
             <dt className="text-xs text-[var(--text-muted)]">Bucket</dt>
-            <dd className="mt-0.5 font-medium">{storage.bucket}</dd>
+            <dd className="font-medium">{storage.bucket}</dd>
           </div>
-          <div>
+          <div className="flex items-center justify-between gap-3 py-2">
             <dt className="text-xs text-[var(--text-muted)]">Host</dt>
-            <dd className="mt-0.5 font-medium">{storage.url || "—"}</dd>
+            <dd className="font-medium">{storage.url || "—"}</dd>
           </div>
         </dl>
-        <p className="hint mt-3">
-          {storage.backend === "supabase"
+
+        <p className="hint mt-2">
+          {supa
             ? "Bukti disimpan di bucket privat Supabase dan tetap disajikan lewat route yang memeriksa sesi — tidak ada URL publik, dan service key tidak pernah sampai ke browser."
             : "Belum ada SUPABASE_URL / SUPABASE_SERVICE_KEY, jadi bukti disimpan di disk. Di Railway, isi kedua env itu atau pastikan volume terpasang supaya berkas tidak hilang saat redeploy."}
         </p>
-      </section>
-
-      <section className="card">
-        <div className="border-b border-[var(--hairline)] px-4 py-3">
-          <h2 className="text-sm font-semibold">Akun ({users.length})</h2>
-          <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-            Menonaktifkan akun atau me-reset passwordnya langsung memutus sesi
-            yang sedang berjalan di perangkat mana pun.
-          </p>
-        </div>
-        <ul className="divide-y divide-[var(--hairline)]">
-          {users.map((u) => (
-            <UserRow
-              key={u.id}
-              user={u}
-              isSelf={u.id === me.id}
-              online={u.online === 1}
-            />
-          ))}
-        </ul>
-      </section>
-
-      <section className="card p-4 sm:p-5">
-        <h2 className="text-sm font-semibold">Tambah akun</h2>
-        <p className="mt-0.5 mb-4 text-xs text-[var(--text-muted)]">
-          Staff bisa mencatat transaksi dan mengunggah bukti, tapi setiap
-          perubahan dan penghapusan harus lewat pengajuan.
-        </p>
-        <CreateUserForm />
-      </section>
-
-      <section className="card">
-        <div className="border-b border-[var(--hairline)] px-4 py-3">
-          <h2 className="text-sm font-semibold">Log aktivitas</h2>
-          <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-            80 kejadian terakhir.
-          </p>
-        </div>
-        {log.length === 0 ? (
-          <p className="px-4 py-10 text-center text-sm text-[var(--text-muted)]">
-            Belum ada aktivitas tercatat.
-          </p>
-        ) : (
-          <div className="max-h-[420px] overflow-y-auto">
-            <table className="w-full min-w-[560px] text-left text-xs">
-              <thead className="sticky top-0 bg-[var(--surface-1)] text-[var(--text-muted)]">
-                <tr className="border-b border-[var(--hairline)]">
-                  <th className="px-4 py-2 font-medium">Waktu</th>
-                  <th className="px-4 py-2 font-medium">User</th>
-                  <th className="px-4 py-2 font-medium">Aksi</th>
-                  <th className="px-4 py-2 font-medium">Detail</th>
-                </tr>
-              </thead>
-              <tbody>
-                {log.map((l) => (
-                  <tr key={l.id} className="border-b border-[var(--hairline)] last:border-0">
-                    <td className="tnum px-4 py-1.5 whitespace-nowrap text-[var(--text-muted)]">
-                      {new Date(l.ts).toLocaleString("id-ID")}
-                    </td>
-                    <td className="px-4 py-1.5 whitespace-nowrap">
-                      {l.username}
-                      <span className="ml-1 text-[var(--text-muted)]">({l.role})</span>
-                    </td>
-                    <td className="px-4 py-1.5 whitespace-nowrap">{l.action}</td>
-                    <td className="px-4 py-1.5 text-[var(--text-secondary)]">{l.detail}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
       </section>
     </div>
   );
