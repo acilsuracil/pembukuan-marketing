@@ -19,6 +19,9 @@ export type StorageBackend = "local" | "supabase";
 const SUPA_URL = (process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || "";
 const BUCKET = process.env.SUPABASE_BUCKET || "bukti";
+// Nama bucket ikut masuk ke path URL. Nama yang memuat spasi atau karakter
+// khusus akan merusak request kalau tidak di-encode.
+const BUCKET_PATH = encodeURIComponent(BUCKET);
 
 export function activeBackend(): StorageBackend {
   return SUPA_URL && SERVICE_KEY ? "supabase" : "local";
@@ -59,7 +62,7 @@ export async function putObject(
   const name = safeKey(key);
 
   if (activeBackend() === "supabase") {
-    const r = await fetch(`${SUPA_URL}/storage/v1/object/${BUCKET}/${name}`, {
+    const r = await fetch(`${SUPA_URL}/storage/v1/object/${BUCKET_PATH}/${encodeURIComponent(name)}`, {
       method: "POST",
       headers: supaHeaders({ "Content-Type": mime, "x-upsert": "false" }),
       body: new Uint8Array(data),
@@ -88,7 +91,7 @@ export async function getObject(
 
   if (backend === "supabase") {
     if (!SUPA_URL || !SERVICE_KEY) return null;
-    const r = await fetch(`${SUPA_URL}/storage/v1/object/${BUCKET}/${name}`, {
+    const r = await fetch(`${SUPA_URL}/storage/v1/object/${BUCKET_PATH}/${encodeURIComponent(name)}`, {
       headers: supaHeaders(),
       cache: "no-store",
     });
@@ -122,7 +125,7 @@ export async function deleteObject(
 
   if (backend === "supabase") {
     if (!SUPA_URL || !SERVICE_KEY) return;
-    await fetch(`${SUPA_URL}/storage/v1/object/${BUCKET}/${name}`, {
+    await fetch(`${SUPA_URL}/storage/v1/object/${BUCKET_PATH}/${encodeURIComponent(name)}`, {
       method: "DELETE",
       headers: supaHeaders(),
     }).catch(() => {
