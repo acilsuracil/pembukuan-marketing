@@ -29,7 +29,10 @@ export default async function AppLayout({
 
   return (
     <div className="mx-auto flex min-h-screen max-w-[1400px] flex-col gap-6 px-4 py-6 lg:flex-row lg:gap-8 lg:px-8">
-      <header className="app-sidebar">
+      {/* Di layar lebar sidebar dibuat setinggi viewport dan lengket, supaya
+          blok akun bisa dijangkarkan ke bawah dan tetap terlihat saat isi
+          halaman digulir. Di ponsel ia kembali jadi bar mendatar biasa. */}
+      <header className="app-sidebar lg:sticky lg:top-6 lg:flex lg:h-[calc(100vh-3rem)] lg:flex-col">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -52,21 +55,23 @@ export default async function AppLayout({
           </div>
         </div>
 
-        <Nav access={access} pending={pending} />
+        <div className="lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+          <Nav access={access} pending={pending} />
+        </div>
 
-        {lockUntil && (
-          <p
-            title={`Periode terkunci sampai ${lockUntil}`}
-            className="sb-row mt-4 hidden items-center gap-1.5 rounded-lg border border-[var(--hairline)] px-2.5 py-2 text-[11px] leading-relaxed text-[var(--text-muted)] lg:flex"
-          >
-            <span aria-hidden>🔒</span>
-            <span className="sb-expanded-only">
-              Terkunci s/d <span className="tnum">{lockUntil}</span>
-            </span>
-          </p>
-        )}
-
-        <div className="mt-4 hidden space-y-2 lg:block">
+        {/* mt-auto mendorong blok ini ke dasar sidebar. */}
+        <div className="mt-4 hidden space-y-2 lg:mt-auto lg:block lg:pt-4">
+          {lockUntil && (
+            <p
+              title={`Periode terkunci sampai ${lockUntil}`}
+              className="sb-row flex items-center gap-1.5 rounded-lg border border-[var(--hairline)] px-2.5 py-2 text-[11px] leading-relaxed text-[var(--text-muted)]"
+            >
+              <span aria-hidden>🔒</span>
+              <span className="sb-expanded-only">
+                Terkunci s/d <span className="tnum">{lockUntil}</span>
+              </span>
+            </p>
+          )}
           <UserMenu user={user} />
           <ThemeToggle />
         </div>
