@@ -29,7 +29,7 @@ export default async function UbahTransaksiPage({
 
   return (
     <div className="max-w-3xl space-y-5">
-      <div>
+      <div className="page-header">
         <Link
           href={`/transaksi/${t.id}`}
           className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)]"

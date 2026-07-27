@@ -8,7 +8,7 @@ export default async function AkunPage() {
 
   return (
     <div className="max-w-lg space-y-5">
-      <div>
+      <div className="page-header">
         <h1 className="text-xl font-semibold tracking-tight">Akun</h1>
         <p className="mt-0.5 text-sm text-[var(--text-muted)]">
           Masuk sebagai <strong>{user.username}</strong> ·{" "}

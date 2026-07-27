@@ -29,7 +29,7 @@ export default async function KategoriPage({
 
   return (
     <div className="space-y-5">
-      <div>
+      <div className="page-header">
         <h1 className="text-xl font-semibold tracking-tight">Kategori & Budget</h1>
         <p className="mt-0.5 text-sm text-[var(--text-muted)]">
           Kategori menjelaskan uangnya dipakai untuk apa — brand menjelaskan untuk

@@ -289,3 +289,18 @@ select.field {
   align-items: center;
   justify-content: center;
 }
+
+/* ---------------------------------------------- header halaman membeku ---
+   Judul + tombol aksi tiap halaman tetap di tempatnya saat isi digulir.
+   Latarnya memakai warna bidang halaman (bukan transparan) supaya kartu yang
+   lewat di bawahnya benar-benar tertutup, bukan menembus. */
+.page-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: var(--plane);
+  padding-top: 1.5rem;
+  margin-top: -1.5rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--hairline);
+}

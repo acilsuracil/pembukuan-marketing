@@ -13,7 +13,7 @@ export default async function TransaksiBaruPage() {
 
   return (
     <div className="max-w-3xl space-y-5">
-      <div>
+      <div className="page-header">
         <Link
           href="/transaksi"
           className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)]"

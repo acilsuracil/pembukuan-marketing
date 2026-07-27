@@ -32,7 +32,7 @@ export default async function BrandPage({
 
   return (
     <div className="space-y-5">
-      <div>
+      <div className="page-header">
         <h1 className="text-xl font-semibold tracking-tight">Brand</h1>
         <p className="mt-0.5 text-sm text-[var(--text-muted)]">
           Saldo USDT tetap satu kolam bersama — halaman ini menunjukkan berapa

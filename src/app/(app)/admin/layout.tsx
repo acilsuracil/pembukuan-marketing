@@ -20,14 +20,16 @@ export default async function AdminLayout({
 
   return (
     <div className="max-w-5xl space-y-5">
-      <div>
+      <div className="page-header">
         <h1 className="text-xl font-semibold tracking-tight">Admin</h1>
         <p className="mt-0.5 text-sm text-[var(--text-muted)]">
           Kelola akun &amp; izin, kunci periode pembukuan, dan telusuri jejak
           aktivitas.
         </p>
+        <div className="mt-3">
+          <AdminTabs tabs={tabs} />
+        </div>
       </div>
-      <AdminTabs tabs={tabs} />
       {children}
     </div>
   );

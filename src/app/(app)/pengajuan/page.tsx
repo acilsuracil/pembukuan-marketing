@@ -186,7 +186,7 @@ export default async function PengajuanPage() {
 
   return (
     <div className="max-w-4xl space-y-5">
-      <div>
+      <div className="page-header">
         <h1 className="text-xl font-semibold tracking-tight">Pengajuan</h1>
         <p className="mt-0.5 text-sm text-[var(--text-muted)]">
           {isAdmin
