@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import LockForm from "@/components/admin/LockForm";
 import { fmtDate } from "@/lib/format";
-import { getLockUntil, hasPerm } from "@/lib/policy";
+import { getLockUntil, hasPerm, isOwner } from "@/lib/policy";
 import { requireUser } from "@/lib/session";
 import { storageStatus } from "@/lib/storage";
 
@@ -19,11 +19,17 @@ export default async function AdminPengaturanPage() {
   }
 
   const lock = getLockUntil();
+
+  // Detail infrastruktur (host Supabase, nama bucket) tidak perlu dilihat
+  // admin biasa — nilainya cuma untuk memastikan sambungan setelah deploy.
+  const showStorage = isOwner(me);
   const storage = storageStatus();
   const supa = storage.backend === "supabase";
 
   return (
-    <div className="grid items-start gap-4 lg:grid-cols-2">
+    <div
+      className={`grid items-start gap-4 ${showStorage ? "lg:grid-cols-2" : "max-w-xl"}`}
+    >
       <section className="card p-4 sm:p-5">
         <h2 className="text-sm font-semibold">Kunci periode</h2>
         <p className="mt-0.5 text-xs text-[var(--text-muted)]">
@@ -50,6 +56,7 @@ export default async function AdminPengaturanPage() {
         </div>
       </section>
 
+      {showStorage && (
       <section className="card p-4 sm:p-5">
         <h2 className="text-sm font-semibold">Penyimpanan bukti transfer</h2>
         <p className="mt-0.5 text-xs text-[var(--text-muted)]">
@@ -87,7 +94,11 @@ export default async function AdminPengaturanPage() {
             ? "Bukti disimpan di bucket privat Supabase dan tetap disajikan lewat route yang memeriksa sesi — tidak ada URL publik, dan service key tidak pernah sampai ke browser."
             : "Belum ada SUPABASE_URL / SUPABASE_SERVICE_KEY, jadi bukti disimpan di disk. Di Railway, isi kedua env itu atau pastikan volume terpasang supaya berkas tidak hilang saat redeploy."}
         </p>
+        <p className="hint mt-2 border-t border-[var(--hairline)] pt-2">
+          Bagian ini hanya terlihat oleh owner.
+        </p>
       </section>
+      )}
     </div>
   );
 }
