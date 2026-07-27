@@ -1,11 +1,10 @@
 "use server";
 
 import crypto from "node:crypto";
-import fs from "node:fs/promises";
-import path from "node:path";
 import { revalidatePath } from "next/cache";
 import { hashPassword, passwordProblem } from "@/lib/auth";
-import { BUKTI_DIR, run, setSetting, tx as inTransaction } from "@/lib/db";
+import { run, setSetting, tx as inTransaction } from "@/lib/db";
+import { deleteObject, putObject } from "@/lib/storage";
 import { SLOT_COUNT } from "@/lib/palette";
 import {
   canDecideRequests,
@@ -163,15 +162,22 @@ async function saveBukti(
       return `"${f.name}" lebih dari 5 MB.`;
   }
 
-  await fs.mkdir(BUKTI_DIR, { recursive: true });
   const now = new Date().toISOString();
   for (const f of usable) {
     const stored = `${crypto.randomUUID()}${EXT_BY_MIME[f.type]}`;
     const buf = Buffer.from(await f.arrayBuffer());
-    await fs.writeFile(path.join(BUKTI_DIR, stored), buf);
+    let backend;
+    try {
+      backend = await putObject(stored, buf, f.type);
+    } catch (e) {
+      // Baris hanya dicatat kalau berkasnya benar-benar tersimpan, supaya tidak
+      // ada bukti yatim yang tampil di UI tapi tidak bisa dibuka.
+      return `Gagal menyimpan "${f.name}": ${(e as Error).message}`;
+    }
     run(
-      `INSERT INTO attachments (id, tx_id, stored_name, orig_name, mime, size, uploaded_by, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO attachments
+         (id, tx_id, stored_name, orig_name, mime, size, uploaded_by, created_at, storage)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       crypto.randomUUID(),
       txId,
       stored,
@@ -180,6 +186,7 @@ async function saveBukti(
       f.size,
       user.id,
       now,
+      backend,
     );
   }
   return null;
@@ -187,11 +194,7 @@ async function saveBukti(
 
 async function removeBuktiFiles(txId: number) {
   for (const a of attachmentsOf(txId)) {
-    try {
-      await fs.unlink(path.join(BUKTI_DIR, a.stored_name));
-    } catch {
-      // berkas sudah tidak ada — biarkan
-    }
+    await deleteObject(a.stored_name, a.storage);
   }
 }
 
@@ -399,11 +402,7 @@ export async function deleteBukti(
   if (!canEditDirectly(me) && att.uploaded_by !== me.id)
     return { ok: false, error: "Hanya admin atau pengunggahnya yang bisa menghapus bukti ini." };
 
-  try {
-    await fs.unlink(path.join(BUKTI_DIR, att.stored_name));
-  } catch {
-    // berkas sudah hilang — tetap bersihkan barisnya
-  }
+  await deleteObject(att.stored_name, att.storage);
   run(`DELETE FROM attachments WHERE id = ?`, att.id);
   logActivity(me, "hapus-bukti", `#${att.tx_id} ${att.orig_name}`);
   await touchSession(me);

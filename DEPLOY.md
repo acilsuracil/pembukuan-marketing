@@ -12,9 +12,10 @@ karena tanpa itu seluruh pembukuan dan bukti transfer hilang setiap kali deploy.
 | Build command | `npm run build` |
 | Start command | `npm start` |
 | Node | 22.5 atau lebih baru (sudah dikunci di `package.json`) |
-| Volume | wajib, mount di `/data` |
+| Volume | wajib, mount di `/data` (untuk database) |
 | Env wajib | `LEDGER_DATA_DIR`, `SESSION_SECRET` |
-| Env disarankan | `PUBLIC_URL` |
+| Env disarankan | `PUBLIC_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` |
+| Bukti transfer | Supabase Storage (bucket **privat**), lihat Langkah 4b |
 
 ---
 
@@ -54,20 +55,20 @@ git status --short   # tidak boleh ada apa pun di bawah data/
 
 ## Langkah 3 — Pasang Volume (paling penting)
 
-Aplikasi ini memakai SQLite dan menyimpan bukti transfer sebagai berkas. Semuanya
-ada di satu folder. Filesystem Railway bersifat sementara — tanpa volume, setiap
-redeploy mengembalikan aplikasi ke kondisi kosong.
+Aplikasi ini memakai SQLite — seluruh pembukuan ada di satu berkas. Filesystem
+Railway bersifat sementara: tanpa volume, setiap redeploy mengembalikan aplikasi
+ke kondisi kosong.
 
 1. Service → tab **Volumes** → **Add Volume**
 2. Mount path: `/data`
-3. Ukuran: mulai 1 GB sudah cukup lega (database kecil; yang memakan tempat
-   adalah bukti transfer — hitung ±5 MB per bukti pada kasus terburuk).
+3. Ukuran: 1 GB sudah sangat lega. Bukti transfer tidak ikut di sini kalau
+   Supabase Storage dipakai (Langkah 4b), jadi yang tersimpan hanya database.
 
 Setelah ini, isi volume:
 
 ```
 /data/ledger.db      ← seluruh pembukuan
-/data/bukti/         ← berkas bukti transfer
+/data/bukti/         ← hanya terpakai kalau Supabase Storage tidak diaktifkan
 ```
 
 ---
@@ -95,6 +96,42 @@ database disalin keluar untuk backup.
 
 `PORT` tidak perlu diisi — Railway mengisinya sendiri dan `npm start` sudah
 mengikuti.
+
+---
+
+## Langkah 4b — Bucket Supabase untuk bukti transfer
+
+Bukti transfer disimpan di Supabase Storage. Kalau env di bawah tidak diisi,
+aplikasi otomatis kembali menyimpan ke disk (`/data/bukti/`) — jadi ini opsional,
+tapi disarankan supaya volume tidak cepat penuh.
+
+**Di Supabase:**
+
+1. **Storage → New bucket**, nama: `bukti`
+2. **Public bucket: JANGAN dicentang.** Biarkan privat.
+3. Tidak perlu membuat policy apa pun. Server memakai service key yang
+   melewati RLS, dan browser tidak pernah bicara langsung ke Supabase.
+
+**Di Railway → Variables:**
+
+| Nama | Nilai |
+|------|-------|
+| `SUPABASE_URL` | `https://xxxx.supabase.co` |
+| `SUPABASE_SERVICE_KEY` | **service_role key** — Supabase → Settings → API |
+| `SUPABASE_BUCKET` | `bukti` (boleh dikosongkan, ini sudah default) |
+
+> ⚠️ **service_role key bersifat rahasia penuh.** Hanya boleh ada di environment
+> variable Railway — jangan pernah masuk ke repo, ke kode, atau dikirim lewat
+> chat. Kunci ini melewati seluruh RLS.
+
+**Kenapa bucket-nya privat, beda dengan DOC PEMBUKUAN.** Di sistem lamamu
+bucket-nya publik, artinya siapa pun yang memegang URL bisa membuka bukti
+transfer tanpa login — dan URL itu gampang bocor lewat riwayat browser, share
+layar, atau screenshot. Di sini berkasnya diambil server lalu diteruskan lewat
+`/api/bukti/[id]` yang memeriksa sesi dulu. Tidak ada URL publik sama sekali.
+
+Setelah deploy, buka **Admin → Penyimpanan bukti transfer**. Kalau tulisannya
+“Supabase Storage” dengan titik hijau, berarti sudah tersambung.
 
 ---
 
@@ -147,8 +184,9 @@ railway link                 # sekali saja, pilih project
 railway ssh "cat /data/ledger.db" > backup-$(date +%F).db
 ```
 
-Bukti transfer ada di `/data/bukti/`. Kalau bukti penting untuk audit, ikut
-di-backup juga.
+Bukti transfer ada di bucket Supabase (atau `/data/bukti/` kalau Supabase tidak
+dipakai). Supabase punya backup sendiri di paket berbayar; untuk paket gratis,
+unduh berkalanya sendiri kalau bukti penting untuk audit.
 
 Alternatif tanpa CLI: **Laporan → Ekspor CSV** memberi seluruh transaksi dalam
 format yang terbaca Excel. Itu bukan pengganti backup database (bukti dan log
@@ -170,6 +208,8 @@ Jalankan ini setelah live. Semua harus sesuai kolom kanan:
 | Buka `/setup` setelah ada admin | dialihkan ke `/login` |
 | `curl -I https://<domain>/api/bukti/<id>` tanpa cookie | `401` |
 | `curl -I https://<domain>/api/export` tanpa cookie | `401` |
+| View source halaman mana pun, cari `eyJ` | tidak ada kunci apa pun |
+| Buka URL bucket Supabase langsung tanpa token | ditolak (bucket privat) |
 | Cek header respons | ada `X-Frame-Options: DENY` |
 | Reset password seorang staff | staff itu langsung ter-logout di semua perangkat |
 

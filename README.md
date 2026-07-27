@@ -3,9 +3,10 @@
 Panel admin arus kas dompet USDT untuk beberapa brand, dengan login, peran
 Admin/Staff, alur pengajuan, bukti transfer, dan kunci periode.
 
-Data tersimpan di SQLite (`data/ledger.db`) dan bukti transfer di `data/bukti/`.
-Tidak ada koneksi keluar sama sekali — tidak ada API pihak ketiga, tidak ada
-telemetri.
+Data tersimpan di SQLite (`data/ledger.db`). Bukti transfer disimpan di bucket
+**privat** Supabase Storage bila `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` diisi,
+atau di `data/bukti/` bila tidak — perpindahannya otomatis, dan berkas lama
+tetap terbaca karena backend-nya dicatat per baris.
 
 Untuk menaikkan ke Railway + domain sendiri, lihat **[DEPLOY.md](DEPLOY.md)**.
 
@@ -86,7 +87,13 @@ menembus periode yang sudah dikunci setelahnya.
   mati** — termasuk di perangkat yang sudah tidak dipegang.
 - Login dibatasi 8 percobaan gagal per 10 menit **per username** (bukan per IP,
   karena header proxy bisa dipalsukan).
-- Bukti transfer disajikan lewat route yang memeriksa sesi, bukan folder publik.
+- Bukti transfer disajikan lewat route yang memeriksa sesi, bukan URL publik.
+  Kalau memakai Supabase, bucket-nya privat dan service key tidak pernah sampai
+  ke browser — berkasnya diambil server lalu diteruskan.
+- **Browser tidak pernah menyentuh database.** Semua baca-tulis lewat Server
+  Component dan Server Action; klien hanya menerima hasil yang memang boleh dia
+  lihat. Tidak ada kunci database di sisi klien, jadi tidak ada RLS yang perlu
+  dikonfigurasi dan tidak ada SQL editor di panel admin.
 - Semua server action memeriksa peran dan kunci periode di server — bukan hanya
   menyembunyikan tombol di UI.
 - Setiap aksi penting tercatat di log aktivitas (Admin → Log aktivitas).

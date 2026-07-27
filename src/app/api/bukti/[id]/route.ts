@@ -1,10 +1,14 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-import { BUKTI_DIR } from "@/lib/db";
 import { getAttachment } from "@/lib/queries";
 import { getUser } from "@/lib/session";
+import { getObject } from "@/lib/storage";
 
-/** Bukti transfer hanya boleh dilihat oleh user yang sudah login. */
+/**
+ * Bukti transfer hanya boleh dilihat oleh user yang sudah login.
+ *
+ * Berkasnya bisa ada di disk lokal atau di Supabase Storage — dua-duanya
+ * diambil server lalu diteruskan lewat route ini, tidak pernah lewat URL publik.
+ * Jadi kunci Supabase tidak pernah sampai ke browser, dan bucket-nya tetap privat.
+ */
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -16,23 +20,20 @@ export async function GET(
   const att = getAttachment(id);
   if (!att) return new Response("Not found", { status: 404 });
 
-  // stored_name selalu dibuat server (uuid + ekstensi), tapi tetap dipagari
-  // supaya tidak ada jalan keluar dari folder bukti.
-  const file = path.join(BUKTI_DIR, path.basename(att.stored_name));
-  if (!file.startsWith(path.resolve(BUKTI_DIR) + path.sep))
-    return new Response("Forbidden", { status: 403 });
-
-  let data: Buffer;
+  let obj;
   try {
-    data = await fs.readFile(file);
+    obj = await getObject(att.stored_name, att.storage);
   } catch {
-    return new Response("Not found", { status: 404 });
+    return new Response("Gagal membaca bukti", { status: 502 });
   }
+  if (!obj) return new Response("Not found", { status: 404 });
 
-  return new Response(new Uint8Array(data), {
+  return new Response(new Uint8Array(obj.body), {
     headers: {
+      // Tipe dari database yang dipakai — bukan dari respons hulu — supaya
+      // tidak bisa dibelokkan jadi tipe lain.
       "Content-Type": att.mime,
-      "Content-Length": String(data.length),
+      "Content-Length": String(obj.body.length),
       "Content-Disposition": `inline; filename="${encodeURIComponent(att.orig_name || att.id)}"`,
       "Cache-Control": "private, max-age=3600",
       "X-Content-Type-Options": "nosniff",

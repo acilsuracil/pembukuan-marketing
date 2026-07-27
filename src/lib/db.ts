@@ -132,6 +132,9 @@ function migrate(db: DatabaseSync) {
   addColumn(db, "transactions", "brand_id", "INTEGER REFERENCES brands(id) ON DELETE SET NULL");
   addColumn(db, "transactions", "created_by", "INTEGER REFERENCES users(id) ON DELETE SET NULL");
   addColumn(db, "transactions", "updated_at", "TEXT");
+  // Backend penyimpanan bukti per baris, supaya berkas lama di disk tetap
+  // terbaca setelah pindah ke Supabase Storage.
+  addColumn(db, "attachments", "storage", "TEXT NOT NULL DEFAULT 'local'");
   db.exec(`CREATE INDEX IF NOT EXISTS idx_tx_brand ON transactions (brand_id)`);
 
   db.exec(`

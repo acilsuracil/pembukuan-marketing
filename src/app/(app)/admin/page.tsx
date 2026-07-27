@@ -3,6 +3,7 @@ import { CreateUserForm, LockForm, UserRow } from "@/components/AdminForms";
 import { getLockUntil } from "@/lib/policy";
 import { listActivity, listUsers } from "@/lib/queries";
 import { requireAdmin } from "@/lib/session";
+import { storageStatus } from "@/lib/storage";
 
 export default async function AdminPage() {
   await connection();
@@ -11,6 +12,7 @@ export default async function AdminPage() {
   const users = listUsers();
   const lock = getLockUntil();
   const log = listActivity(80);
+  const storage = storageStatus();
 
   return (
     <div className="max-w-4xl space-y-5">
@@ -35,6 +37,43 @@ export default async function AdminPage() {
           )}
         </p>
         <LockForm current={lock} />
+      </section>
+
+      <section className="card p-4 sm:p-5">
+        <h2 className="text-sm font-semibold">Penyimpanan bukti transfer</h2>
+        <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
+          <div>
+            <dt className="text-xs text-[var(--text-muted)]">Backend aktif</dt>
+            <dd className="mt-0.5 flex items-center gap-1.5 font-medium">
+              <span
+                aria-hidden
+                className="h-2 w-2 rounded-full"
+                style={{
+                  background:
+                    storage.backend === "supabase"
+                      ? "var(--status-good)"
+                      : "var(--status-warning)",
+                }}
+              />
+              {storage.backend === "supabase"
+                ? "Supabase Storage"
+                : "Disk lokal / volume"}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-[var(--text-muted)]">Bucket</dt>
+            <dd className="mt-0.5 font-medium">{storage.bucket}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-[var(--text-muted)]">Host</dt>
+            <dd className="mt-0.5 font-medium">{storage.url || "—"}</dd>
+          </div>
+        </dl>
+        <p className="hint mt-3">
+          {storage.backend === "supabase"
+            ? "Bukti disimpan di bucket privat Supabase dan tetap disajikan lewat route yang memeriksa sesi — tidak ada URL publik, dan service key tidak pernah sampai ke browser."
+            : "Belum ada SUPABASE_URL / SUPABASE_SERVICE_KEY, jadi bukti disimpan di disk. Di Railway, isi kedua env itu atau pastikan volume terpasang supaya berkas tidak hilang saat redeploy."}
+        </p>
       </section>
 
       <section className="card">

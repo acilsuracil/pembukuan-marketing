@@ -76,6 +76,8 @@ export interface Attachment {
   size: number;
   uploaded_by: number | null;
   created_at: string;
+  /** Di mana berkasnya berada: disk lokal atau Supabase Storage. */
+  storage: "local" | "supabase";
 }
 
 export type RequestType = "edit" | "delete";
