@@ -354,6 +354,16 @@ export function run(sql: string, ...params: unknown[]) {
     .run(...(params as never[]));
 }
 
+/** Menutup koneksi supaya berkasnya bisa ditukar saat pemulihan backup. */
+export function closeDb() {
+  try {
+    g.__ledgerDb?.close();
+  } catch {
+    // sudah tertutup
+  }
+  g.__ledgerDb = undefined;
+}
+
 export function tx<T>(fn: () => T): T {
   const db = getDb();
   db.exec("BEGIN");

@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { hashPassword, passwordProblem } from "@/lib/auth";
 import { run, setSetting, tx as inTransaction } from "@/lib/db";
+import { createBackup, removeBackup, restoreBackup } from "@/lib/backup";
 import { deleteObject, putObject } from "@/lib/storage";
 import { SLOT_COUNT } from "@/lib/palette";
 import {
@@ -933,5 +934,87 @@ export async function saveRolePerms(
   return {
     ok: true,
     message: "Izin default disimpan. Akun dengan izin khusus tidak ikut berubah.",
+  };
+}
+
+/* ================================================================ backup */
+
+/**
+ * Backup memuat seluruh isi database — termasuk hash password semua akun —
+ * jadi seluruh operasinya owner-only, tidak diserahkan ke sistem izin.
+ */
+export async function createBackupNow(
+  _prev: ActionState,
+  fd: FormData,
+): Promise<ActionState> {
+  const me = await authed();
+  if (!me) return DENIED;
+  if (!isOwner(me)) return OWNER_ONLY;
+
+  const note = str(fd, "note").slice(0, 120);
+  try {
+    const r = await createBackup();
+    logActivity(
+      me,
+      "backup-manual",
+      `${r.name} (${r.size} byte)${note ? ` — ${note}` : ""}`,
+    );
+    await touchSession(me);
+    refresh();
+    return {
+      ok: true,
+      message:
+        `Backup ${r.name} dibuat.` +
+        (r.pruned ? ` ${r.pruned} snapshot lama dibuang sesuai retensi.` : ""),
+    };
+  } catch (e) {
+    return { ok: false, error: `Gagal membuat backup: ${(e as Error).message}` };
+  }
+}
+
+export async function deleteBackupFile(
+  _prev: ActionState,
+  fd: FormData,
+): Promise<ActionState> {
+  const me = await authed();
+  if (!me) return DENIED;
+  if (!isOwner(me)) return OWNER_ONLY;
+
+  const name = str(fd, "name");
+  if (!(await removeBackup(name)))
+    return { ok: false, error: "Nama backup tidak valid." };
+
+  logActivity(me, "hapus-backup", name);
+  await touchSession(me);
+  refresh();
+  return { ok: true, message: `Backup ${name} dihapus.` };
+}
+
+export async function restoreFromBackup(
+  _prev: ActionState,
+  fd: FormData,
+): Promise<ActionState> {
+  const me = await authed();
+  if (!me) return DENIED;
+  if (!isOwner(me)) return OWNER_ONLY;
+
+  // Ketikan konfirmasi: memulihkan menimpa seluruh data yang ada sekarang.
+  if (str(fd, "confirm") !== "PULIHKAN")
+    return { ok: false, error: 'Ketik PULIHKAN untuk menegaskan pemulihan.' };
+
+  const name = str(fd, "name");
+  const r = await restoreBackup(name);
+  if (!r.ok) return { ok: false, error: r.error ?? "Pemulihan gagal." };
+
+  // Dicatat setelah database ditukar, jadi jejaknya ada di data yang baru.
+  logActivity(me, "pulihkan-backup", `dari ${name}`);
+  refresh();
+  return {
+    ok: true,
+    message:
+      `Data dipulihkan dari ${name}.` +
+      (r.safetyBackup
+        ? ` Kondisi sebelumnya disimpan sebagai ${r.safetyBackup} kalau ternyata salah pilih.`
+        : ""),
   };
 }

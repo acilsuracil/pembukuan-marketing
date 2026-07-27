@@ -15,6 +15,7 @@ export default async function AdminPengaturanPage() {
   if (!hasPerm(me, "lockPeriod")) {
     if (hasPerm(me, "manageUsers")) redirect("/admin/pengguna");
     if (hasPerm(me, "viewActivity")) redirect("/admin/aktivitas");
+    if (isOwner(me)) redirect("/admin/backup");
     redirect("/?e=no-access");
   }
 

@@ -77,6 +77,30 @@ pengajuan*. Pengajuan **tidak menyentuh data** sampai disetujui, dan halaman
 Pengajuan menampilkan perbandingan nilai sekarang vs yang diusulkan beserta
 alasannya.
 
+## Backup
+
+Seluruh database dipotret otomatis setiap hari ke folder `backup/` pada bucket
+Supabase yang sama (atau folder data lokal bila Supabase tidak dipakai).
+Snapshot dibuat dengan `VACUUM INTO`, bukan menyalin berkasnya begitu saja —
+menyalin database ber-WAL yang sedang dipakai bisa menghasilkan berkas rusak.
+
+Retensinya bertingkat, jadi jangkauannya setahun dengan jumlah berkas tetap
+kecil (~34):
+
+- **harian** disimpan 14 hari
+- **mingguan** disimpan 8 minggu
+- **bulanan** disimpan 12 bulan
+
+Di **Admin → Backup** (owner saja, karena snapshot memuat hash password semua
+akun) tersedia tombol backup manual, unduh, hapus, dan **pulihkan**. Memulihkan
+memotret kondisi sekarang lebih dulu, jadi keputusannya bisa dibalik, dan
+menolak berkas yang bukan database aplikasi ini.
+
+> Backup tersimpan di Supabase yang sama dengan bukti transfer dan dibuka dengan
+> kunci yang sama. Sebulan sekali, **unduh satu snapshot ke laptop atau Google
+> Drive** — itu satu-satunya salinan yang tidak ikut hilang kalau project
+> Supabase-nya bermasalah.
+
 ## Kunci periode
 
 Admin → **Kunci periode** → pilih tanggal. Semua transaksi pada tanggal itu dan

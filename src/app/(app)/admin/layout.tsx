@@ -17,14 +17,16 @@ export default async function AdminLayout({
   if (isOwner(me)) tabs.push({ href: "/admin/peran", label: "Peran & izin" });
   if (hasPerm(me, "viewActivity"))
     tabs.push({ href: "/admin/aktivitas", label: "Log aktivitas" });
+  // Snapshot memuat hash password seluruh akun — owner saja.
+  if (isOwner(me)) tabs.push({ href: "/admin/backup", label: "Backup" });
 
   return (
     <div className="max-w-5xl space-y-5">
       <div className="page-header">
         <h1 className="text-xl font-semibold tracking-tight">Admin</h1>
         <p className="mt-0.5 text-sm text-[var(--text-muted)]">
-          Kelola akun &amp; izin, kunci periode pembukuan, dan telusuri jejak
-          aktivitas.
+          Kelola akun &amp; izin, kunci periode pembukuan, telusuri jejak
+          aktivitas, dan jaga salinan cadangan.
         </p>
         <div className="mt-3">
           <AdminTabs tabs={tabs} />

@@ -176,8 +176,16 @@ ada yang perlu diubah di kode.
 Railway → Settings → pastikan replicas tetap 1. Ini bukan aplikasi yang bisa
 di-scale horizontal apa adanya.
 
-**Backup rutin.** Seluruh pembukuan ada di satu berkas. Cara paling sederhana,
-lewat Railway CLI:
+**Backup sudah otomatis.** Aplikasi memotret seluruh database setiap hari ke
+folder `backup/` pada bucket Supabase, dengan retensi bertingkat (harian 14
+hari, mingguan 8 minggu, bulanan 12 bulan). Pantau di **Admin → Backup**.
+
+Yang masih perlu kamu lakukan: **sebulan sekali unduh satu snapshot** dari
+halaman itu ke laptop atau Google Drive. Backup otomatis tinggal di Supabase
+yang sama dengan bukti transfer, jadi kalau project Supabase-nya bermasalah,
+salinan di luar itulah satu-satunya yang tersisa.
+
+Kalau perlu salinan langsung dari volume, lewat Railway CLI:
 
 ```bash
 railway link                 # sekali saja, pilih project
