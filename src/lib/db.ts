@@ -2,9 +2,42 @@ import { DatabaseSync } from "node:sqlite";
 import fs from "node:fs";
 import path from "node:path";
 
+const DATA_DIR_EXPLICIT = Boolean(process.env.LEDGER_DATA_DIR);
 const DATA_DIR = process.env.LEDGER_DATA_DIR ?? path.join(process.cwd(), "data");
 const DB_PATH = path.join(DATA_DIR, "ledger.db");
 export const BUKTI_DIR = path.join(DATA_DIR, "bukti");
+
+/**
+ * Deteksi database yang berumur sependek deployment.
+ *
+ * Di platform seperti Railway, filesystem aplikasi dibuang setiap deploy. Kalau
+ * database mendarat di dalam folder aplikasi, seluruh pembukuan ikut terhapus
+ * tiap kali kode diperbarui — dan gejalanya menipu: aplikasi tetap jalan, hanya
+ * datanya kosong lagi. Ini dipakai untuk memperingatkan sebelum data asli masuk.
+ */
+export function dataDirHealth() {
+  const insideApp = path
+    .resolve(DATA_DIR)
+    .startsWith(path.resolve(process.cwd()) + path.sep);
+  let dbCreatedAt: string | null = null;
+  let sizeBytes = 0;
+  try {
+    const st = fs.statSync(DB_PATH);
+    dbCreatedAt = st.birthtime.toISOString();
+    sizeBytes = st.size;
+  } catch {
+    // database belum terbentuk
+  }
+  return {
+    dir: DATA_DIR,
+    explicit: DATA_DIR_EXPLICIT,
+    insideApp,
+    /** Benar = data hampir pasti hilang setiap redeploy. */
+    ephemeralRisk: !DATA_DIR_EXPLICIT || insideApp,
+    dbCreatedAt,
+    sizeBytes,
+  };
+}
 
 // Dev hot-reload keeps re-evaluating this module; hold the handle on globalThis
 // so we don't leak a new connection per reload.
@@ -279,6 +312,13 @@ function seed(db: DatabaseSync) {
 
 export function getDb(): DatabaseSync {
   if (g.__ledgerDb) return g.__ledgerDb;
+  if (dataDirHealth().ephemeralRisk) {
+    console.error(
+      `[pembukuan] PERINGATAN: database disimpan di ${DATA_DIR}, di dalam folder aplikasi. ` +
+        `Di Railway/Vercel folder ini dibuang setiap deploy — seluruh data akan hilang. ` +
+        `Pasang volume lalu set LEDGER_DATA_DIR ke mount path-nya (mis. /data).`,
+    );
+  }
   fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.mkdirSync(BUKTI_DIR, { recursive: true });
   const db = new DatabaseSync(DB_PATH);

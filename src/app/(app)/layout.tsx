@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
+import EphemeralWarning from "@/components/EphemeralWarning";
 import Nav from "@/components/Nav";
 import ThemeToggle from "@/components/ThemeToggle";
 import UserMenu from "@/components/UserMenu";
@@ -67,7 +68,10 @@ export default async function AppLayout({
         </div>
       </header>
 
-      <main className="min-w-0 flex-1 pb-12">{children}</main>
+      <main className="min-w-0 flex-1 space-y-5 pb-12">
+        <EphemeralWarning compact />
+        {children}
+      </main>
     </div>
   );
 }
