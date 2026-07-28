@@ -3,17 +3,27 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import BuktiPanel from "@/components/Bukti";
 import DeleteTxButton from "@/components/DeleteTxButton";
+import TxForm from "@/components/TxForm";
 import { Badge } from "@/components/ui";
 import { fmtDate, fmtIdr, fmtRate, fmtUsdt } from "@/lib/format";
 import { seriesVar } from "@/lib/palette";
 import { hasPerm, isLocked } from "@/lib/policy";
-import { attachmentsOf, getTransaction, pendingRequestFor } from "@/lib/queries";
+import {
+  attachmentsOf,
+  getTransaction,
+  incomeRates,
+  listBrands,
+  listCategories,
+  pendingRequestFor,
+} from "@/lib/queries";
 import { requireUser } from "@/lib/session";
 
 export default async function DetailTransaksiPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   await connection();
   const user = await requireUser();
@@ -26,6 +36,11 @@ export default async function DetailTransaksiPage({
   const locked = isLocked(t.date);
   const canEdit = hasPerm(user, "edit");
   const canDelete = hasPerm(user, "delete");
+
+  // Formulir dibuka lewat query, bukan state klien: tahan refresh, bisa ditautkan,
+  // dan halamannya tetap Server Component yang menegakkan syaratnya sendiri.
+  const sp = await searchParams;
+  const editing = sp.ubah !== undefined && !locked && !pending;
 
   const rows: Array<[string, React.ReactNode]> = [
     ["Tanggal", fmtDate(t.date)],
@@ -135,16 +150,31 @@ export default async function DetailTransaksiPage({
         </section>
       )}
 
-      <section className="card">
-        <dl className="divide-y divide-[var(--hairline)]">
-          {rows.map(([k, v]) => (
-            <div key={k} className="flex gap-4 px-4 py-2.5 text-sm">
-              <dt className="w-36 shrink-0 text-[var(--text-secondary)]">{k}</dt>
-              <dd className="tnum min-w-0 flex-1">{v}</dd>
-            </div>
-          ))}
-        </dl>
-      </section>
+      {editing ? (
+        <section className="card p-4 sm:p-6">
+          <h2 className="mb-4 text-sm font-semibold">
+            {canEdit ? "Ubah transaksi" : "Ajukan perubahan"}
+          </h2>
+          <TxForm
+            categories={listCategories(true)}
+            brands={listBrands(true)}
+            inRates={incomeRates()}
+            initial={t}
+            canEditDirectly={canEdit}
+          />
+        </section>
+      ) : (
+        <section className="card">
+          <dl className="divide-y divide-[var(--hairline)]">
+            {rows.map(([k, v]) => (
+              <div key={k} className="flex gap-4 px-4 py-2.5 text-sm">
+                <dt className="w-36 shrink-0 text-[var(--text-secondary)]">{k}</dt>
+                <dd className="tnum min-w-0 flex-1">{v}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      )}
 
       <BuktiPanel
         txId={t.id}
@@ -160,18 +190,28 @@ export default async function DetailTransaksiPage({
             🔒 Transaksi ini berada di periode yang sudah dikunci, jadi tidak bisa
             diubah maupun dihapus.
           </p>
+        ) : pending ? (
+          <span className="text-xs text-[var(--text-muted)]">
+            Pengajuan yang berjalan harus diputuskan dulu sebelum transaksi ini
+            bisa diubah atau dihapus.
+          </span>
         ) : (
           <>
-            <Link href={`/transaksi/${t.id}/ubah`} className="btn btn-ghost text-xs">
-              {canEdit ? "Ubah transaksi" : "Ajukan perubahan"}
+            {/* Formulir dibuka di halaman ini juga — panel bukti di atas tetap
+                di tempatnya, jadi lampiran yang sudah ada tidak hilang dari
+                pandangan saat mengubah. */}
+            <Link
+              href={editing ? `/transaksi/${t.id}` : `/transaksi/${t.id}?ubah`}
+              scroll={false}
+              className="btn btn-ghost text-xs"
+            >
+              {editing
+                ? "Tutup formulir"
+                : canEdit
+                  ? "Ubah transaksi"
+                  : "Ajukan perubahan"}
             </Link>
-            {pending ? (
-              <span className="text-xs text-[var(--text-muted)]">
-                Pengajuan lain harus diputuskan dulu sebelum bisa mengajukan ulang.
-              </span>
-            ) : (
-              <DeleteTxButton txId={t.id} canDeleteDirectly={canDelete} />
-            )}
+            <DeleteTxButton txId={t.id} canDeleteDirectly={canDelete} />
           </>
         )}
       </section>

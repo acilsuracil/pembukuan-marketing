@@ -30,7 +30,6 @@ export default function TxForm({
   inRates,
   initial,
   canEditDirectly,
-  buktiTaken = 0,
 }: {
   categories: Category[];
   brands: Brand[];
@@ -39,8 +38,6 @@ export default function TxForm({
   initial?: TxRow;
   /** Punya izin "edit"; kalau tidak, perubahan jadi pengajuan. */
   canEditDirectly: boolean;
-  /** Bukti yang sudah menempel di transaksi ini — memotong sisa kuota. */
-  buktiTaken?: number;
 }) {
   const router = useRouter();
   const editing = Boolean(initial);
@@ -64,7 +61,11 @@ export default function TxForm({
   const [fileCount, setFileCount] = useState(0);
 
   useEffect(() => {
-    if (state.ok) router.push(editing ? `/transaksi/${initial!.id}` : "/transaksi");
+    if (!state.ok) return;
+    // Saat mengubah, formulirnya menumpang di halaman detail: cukup lepas query
+    // `?ubah` supaya formulir menutup dan halaman kembali ke tampilan bacanya.
+    router.push(editing ? `/transaksi/${initial!.id}` : "/transaksi");
+    router.refresh();
   }, [state.ok, router, editing, initial]);
 
   /** Kurs pemasukan terakhir pada atau sebelum tanggal yang dipilih. */
@@ -403,15 +404,16 @@ export default function TxForm({
         </div>
       </div>
 
-      {/* Bukti transfer — tidak ikut diajukan, jadi disembunyikan saat staff
-          mengubah transaksi (dipakai lewat halaman detail). */}
-      {!needsRequest && (
+      {/* Hanya saat mencatat baru. Formulir ubah menumpang di halaman detail,
+          yang panel buktinya sudah berdiri sendiri tepat di bawah ini —
+          menampilkan dua tempat unggah sekaligus hanya membingungkan. */}
+      {!editing && (
         <div>
           <label className="label" htmlFor="bukti">
             Bukti transfer{" "}
             <span className="font-normal text-[var(--text-muted)]">— opsional</span>
           </label>
-          <BuktiInput id="bukti" taken={buktiTaken} onChange={setFileCount} />
+          <BuktiInput id="bukti" onChange={setFileCount} />
           <p className="hint">
             JPG, PNG, WEBP, atau GIF. Maks 5 MB per berkas, 8 berkas per transaksi.
             {fileCount > 0 && (
@@ -513,6 +515,7 @@ export default function TxForm({
         />
         <Link
           href={editing ? `/transaksi/${initial!.id}` : "/transaksi"}
+          scroll={!editing}
           className="btn btn-ghost"
         >
           Batal

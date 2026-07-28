@@ -256,7 +256,10 @@ select.field {
 
 @media (min-width: 1024px) {
   .app-sidebar {
-    width: 14rem;
+    /* Dipersempit dari 14rem: tabel transaksi punya banyak kolom dan yang
+       paling kanan terpotong lebih dulu. 12rem masih memuat label terpanjang
+       ("Kategori & Budget") tanpa terpenggal. */
+    width: 12rem;
     flex-shrink: 0;
     transition: width 0.18s ease;
   }

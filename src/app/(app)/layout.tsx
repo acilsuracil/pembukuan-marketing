@@ -28,7 +28,7 @@ export default async function AppLayout({
   };
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-[1400px] flex-col gap-6 px-4 py-6 lg:flex-row lg:gap-8 lg:px-8">
+    <div className="mx-auto flex min-h-screen max-w-[1400px] flex-col gap-6 px-4 py-6 lg:flex-row lg:gap-6 lg:px-6">
       {/* Di layar lebar sidebar dibuat setinggi viewport dan lengket, supaya
           blok akun bisa dijangkarkan ke bawah dan tetap terlihat saat isi
           halaman digulir. Di ponsel ia kembali jadi bar mendatar biasa. */}
