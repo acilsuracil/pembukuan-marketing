@@ -43,6 +43,10 @@ export interface TxRow {
   type: TxType;
   amount_usdt: number;
   fee_usdt: number;
+  /** Fee agency dalam persen dari nominal. 0 = tidak ada. */
+  fee_pct: number;
+  /** Hasil rupiahnya dalam USDT: nominal × fee_pct ÷ 100, dibulatkan 2 desimal. */
+  fee_pct_usdt: number;
   rate_idr: number | null;
   category_id: number | null;
   brand_id: number | null;
@@ -62,7 +66,7 @@ export interface TxRow {
   rate_source: "manual" | "warisan";
   /** Perubahan saldo dompet, bertanda. */
   delta_usdt: number;
-  /** Nilai absolut arus kas (nominal + fee untuk keluar, nominal - fee untuk masuk). */
+  /** Nilai absolut arus kas (nominal + semua fee untuk keluar, nominal - semua fee untuk masuk). */
   flow_usdt: number;
   month: string;
   bukti_count: number;

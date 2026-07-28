@@ -160,9 +160,17 @@ export default function TxTable({
               <td className="tnum px-4 py-2.5 text-right whitespace-nowrap">
                 {t.type === "in" ? "+" : "−"}
                 {fmtUsdt(t.flow_usdt).replace(" USDT", "")}
-                {t.fee_usdt > 0 && (
+                {/* Fee agency disebut dengan persentasenya — itu bentuk yang
+                    dikenali saat mencocokkan dengan tagihan agency. */}
+                {(t.fee_usdt > 0 || t.fee_pct > 0) && (
                   <div className="text-[11px] text-[var(--text-muted)]">
-                    inc. fee {t.fee_usdt}
+                    inc.{" "}
+                    {[
+                      t.fee_pct > 0 && `fee ${t.fee_pct}% = ${t.fee_pct_usdt}`,
+                      t.fee_usdt > 0 && `jaringan ${t.fee_usdt}`,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </div>
                 )}
               </td>

@@ -32,7 +32,8 @@ export async function GET(request: Request) {
 
   const header = [
     "Tanggal", "Jenis", "Brand", "Kategori", "Keterangan", "Pihak",
-    "Nominal USDT", "Fee USDT", "Arus USDT", "Kurs IDR",
+    "Nominal USDT", "Fee agency %", "Fee agency USDT", "Biaya jaringan USDT",
+    "Arus USDT", "Kurs IDR",
     "Sumber kurs", "Nilai IDR", "Bukti", "Dicatat oleh", "Tx Hash",
   ];
 
@@ -51,6 +52,8 @@ export async function GET(request: Request) {
         t.description,
         t.counterparty,
         num(t.amount_usdt),
+        num(t.fee_pct),
+        num(t.fee_pct_usdt),
         num(t.fee_usdt),
         num(t.flow_usdt),
         num(t.eff_rate, 0),

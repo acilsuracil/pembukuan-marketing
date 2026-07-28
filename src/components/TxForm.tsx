@@ -9,8 +9,9 @@ import {
   updateTransaction,
   type ActionState,
 } from "@/app/actions";
-import { fmtIdr, fmtRate, todayISO } from "@/lib/format";
+import { fmtIdr, fmtRate, fmtUsdt, todayISO } from "@/lib/format";
 import type { Brand, Category, TxRow } from "@/lib/types";
+import BuktiInput from "./BuktiInput";
 
 const EMPTY: ActionState = { ok: false };
 
@@ -29,6 +30,7 @@ export default function TxForm({
   inRates,
   initial,
   canEditDirectly,
+  buktiTaken = 0,
 }: {
   categories: Category[];
   brands: Brand[];
@@ -37,6 +39,8 @@ export default function TxForm({
   initial?: TxRow;
   /** Punya izin "edit"; kalau tidak, perubahan jadi pengajuan. */
   canEditDirectly: boolean;
+  /** Bukti yang sudah menempel di transaksi ini — memotong sisa kuota. */
+  buktiTaken?: number;
 }) {
   const router = useRouter();
   const editing = Boolean(initial);
@@ -51,10 +55,13 @@ export default function TxForm({
   const [date, setDate] = useState(initial?.date ?? todayISO());
   const [amount, setAmount] = useState(String(initial?.amount_usdt ?? ""));
   const [fee, setFee] = useState(String(initial?.fee_usdt ?? ""));
+  const [feePct, setFeePct] = useState(
+    initial?.fee_pct ? String(initial.fee_pct) : "",
+  );
   const [rate, setRate] = useState(
     initial?.rate_idr != null ? String(initial.rate_idr) : "",
   );
-  const [files, setFiles] = useState<File[]>([]);
+  const [fileCount, setFileCount] = useState(0);
 
   useEffect(() => {
     if (state.ok) router.push(editing ? `/transaksi/${initial!.id}` : "/transaksi");
@@ -73,7 +80,12 @@ export default function TxForm({
   const catOptions = categories.filter((c) => c.kind === type);
   const amountNum = Number(amount.replace(",", ".")) || 0;
   const feeNum = Number(fee.replace(",", ".")) || 0;
-  const flow = type === "in" ? amountNum - feeNum : amountNum + feeNum;
+  const feePctNum = Number(feePct.replace(",", ".")) || 0;
+  // Dibulatkan sama seperti tx_view, supaya pratinjau di sini tidak pernah
+  // berbeda sesen pun dari angka yang nanti tersimpan.
+  const feePctUsdt = Math.round((amountNum * feePctNum) / 100 * 100) / 100;
+  const feeTotal = feeNum + feePctUsdt;
+  const flow = type === "in" ? amountNum - feeTotal : amountNum + feeTotal;
   const manualRate = Number(rate.replace(/\./g, "").replace(",", ".")) || 0;
   const effRate =
     type === "in" ? manualRate : manualRate > 0 ? manualRate : inheritedRate;
@@ -276,6 +288,36 @@ export default function TxForm({
         </div>
 
         <div>
+          <label className="label" htmlFor="fee_pct">
+            Fee agency (%){" "}
+            <span className="font-normal text-[var(--text-muted)]">— opsional</span>
+          </label>
+          <input
+            id="fee_pct"
+            name="fee_pct"
+            type="number"
+            step="0.01"
+            min="0"
+            max="100"
+            inputMode="decimal"
+            placeholder="0"
+            className="field tnum"
+            value={feePct}
+            onChange={(e) => setFeePct(e.target.value)}
+          />
+          <p className="hint">
+            Dihitung dari nominal, lalu diperlakukan seperti biaya jaringan.
+            {feePctNum > 0 && amountNum > 0 && (
+              <>
+                {" "}
+                {feePctNum}% × {fmtUsdt(amountNum)} ={" "}
+                <strong>{fmtUsdt(feePctUsdt)}</strong>.
+              </>
+            )}
+          </p>
+        </div>
+
+        <div>
           <label className="label" htmlFor="rate_idr">
             {type === "in"
               ? "Kurs beli (Rp per 1 USDT)"
@@ -369,21 +411,13 @@ export default function TxForm({
             Bukti transfer{" "}
             <span className="font-normal text-[var(--text-muted)]">— opsional</span>
           </label>
-          <input
-            id="bukti"
-            name="bukti"
-            type="file"
-            accept="image/jpeg,image/png,image/webp,image/gif"
-            multiple
-            className="field cursor-pointer file:mr-3 file:rounded-md file:border-0 file:bg-[var(--wash)] file:px-2.5 file:py-1 file:text-xs file:text-[var(--text-primary)]"
-            onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
-          />
+          <BuktiInput id="bukti" taken={buktiTaken} onChange={setFileCount} />
           <p className="hint">
             JPG, PNG, WEBP, atau GIF. Maks 5 MB per berkas, 8 berkas per transaksi.
-            {files.length > 0 && (
+            {fileCount > 0 && (
               <>
                 {" "}
-                <strong>{files.length} berkas dipilih.</strong>
+                <strong>{fileCount} berkas dipilih.</strong>
               </>
             )}
           </p>
@@ -442,6 +476,29 @@ export default function TxForm({
             </dd>
           </div>
         </dl>
+
+        {/* Rincian ditulis terbuka begitu ada fee — angka arus kas yang sudah
+            digabung sulit dipercaya kalau asal-usulnya tidak kelihatan. */}
+        {amountNum > 0 && feeTotal > 0 && (
+          <p className="hint mt-3">
+            {fmtUsdt(amountNum)}
+            {feePctNum > 0 && (
+              <>
+                {" "}
+                {type === "in" ? "−" : "+"} {fmtUsdt(feePctUsdt)} fee agency (
+                {feePctNum}%)
+              </>
+            )}
+            {feeNum > 0 && (
+              <>
+                {" "}
+                {type === "in" ? "−" : "+"} {fmtUsdt(feeNum)} biaya jaringan
+              </>
+            )}{" "}
+            = <strong>{fmtUsdt(flow)}</strong>{" "}
+            {type === "in" ? "masuk ke dompet" : "keluar dari dompet"}
+          </p>
+        )}
       </div>
 
       <div className="flex items-center gap-2">

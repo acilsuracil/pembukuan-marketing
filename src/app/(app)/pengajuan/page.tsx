@@ -14,6 +14,8 @@ interface Proposed {
   type: "in" | "out";
   amount: number;
   fee: number;
+  /** Menyusul setelah rilis awal — pengajuan lama tidak memuatnya. */
+  feePct?: number;
   rate: number | null;
   categoryId: number | null;
   brandId: number | null;
@@ -52,6 +54,8 @@ function diffRows(before: TxRow, after: Proposed): Array<[string, string, string
   push("Kategori", catName(before.category_id), catName(after.categoryId));
   push("Nominal", fmtUsdt(before.amount_usdt), fmtUsdt(after.amount));
   push("Biaya jaringan", fmtUsdt(before.fee_usdt), fmtUsdt(after.fee));
+  // Pengajuan lama dibuat sebelum kolom ini ada, jadi feePct-nya kosong.
+  push("Fee agency", `${before.fee_pct}%`, `${after.feePct ?? 0}%`);
   push(
     "Kurs manual",
     before.rate_idr === null ? "(warisan)" : fmtRate(before.rate_idr),

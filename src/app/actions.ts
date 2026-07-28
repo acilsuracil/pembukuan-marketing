@@ -3,6 +3,11 @@
 import crypto from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { hashPassword, passwordProblem } from "@/lib/auth";
+import {
+  buktiProblem,
+  EXT_BY_MIME,
+  MAX_BUKTI_PER_TX,
+} from "@/lib/bukti";
 import { run, setSetting, tx as inTransaction } from "@/lib/db";
 import { createBackup, removeBackup, restoreBackup } from "@/lib/backup";
 import { deleteObject, putObject } from "@/lib/storage";
@@ -75,11 +80,18 @@ async function authed(): Promise<SessionUser | null> {
 
 /* ============================================================== transaksi */
 
+/** Pembulatan 2 desimal, sama dengan yang dipakai tx_view saat menghitung fee. */
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
 interface TxValues {
   date: string;
   type: "in" | "out";
   amount: number;
   fee: number;
+  /** Fee agency dalam persen dari nominal. */
+  feePct: number;
   rate: number | null;
   categoryId: number | null;
   brandId: number | null;
@@ -103,8 +115,20 @@ function readTx(fd: FormData): { ok: false; error: string } | { ok: true; v: TxV
 
   const fee = parseNum(fd.get("fee_usdt")) ?? 0;
   if (fee < 0) return { ok: false, error: "Biaya jaringan tidak boleh negatif." };
-  if (type === "in" && fee >= amount)
-    return { ok: false, error: "Biaya jaringan tidak boleh menghabiskan nominal pemasukan." };
+
+  const feePct = parseNum(fd.get("fee_pct")) ?? 0;
+  if (feePct < 0) return { ok: false, error: "Fee agency tidak boleh negatif." };
+  // Dibatasi 100%: fee yang melebihi nominalnya sendiri hampir selalu salah
+  // ketik (mis. 1500 untuk maksud 15,00), dan angkanya menular ke seluruh laporan.
+  if (feePct > 100)
+    return { ok: false, error: "Fee agency tidak masuk akal kalau lebih dari 100%." };
+
+  // Pemasukan memotong fee dari nominal, jadi keduanya tidak boleh menghabiskannya.
+  if (type === "in" && fee + round2((amount * feePct) / 100) >= amount)
+    return {
+      ok: false,
+      error: "Biaya dan fee tidak boleh menghabiskan nominal pemasukan.",
+    };
 
   const rate = parseNum(fd.get("rate_idr"));
   if (type === "in" && (rate === null || rate <= 0))
@@ -131,6 +155,7 @@ function readTx(fd: FormData): { ok: false; error: string } | { ok: true; v: TxV
       type,
       amount,
       fee,
+      feePct,
       rate,
       categoryId,
       brandId,
@@ -142,15 +167,6 @@ function readTx(fd: FormData): { ok: false; error: string } | { ok: true; v: TxV
 }
 
 /* ------------------------------------------------------------------ bukti */
-
-const MAX_BUKTI_BYTES = 5 * 1024 * 1024;
-const MAX_BUKTI_PER_TX = 8;
-const EXT_BY_MIME: Record<string, string> = {
-  "image/jpeg": ".jpg",
-  "image/png": ".png",
-  "image/webp": ".webp",
-  "image/gif": ".gif",
-};
 
 /** Menyimpan berkas bukti ke disk + mencatat barisnya. Mengembalikan pesan galat kalau ada. */
 async function saveBukti(
@@ -166,10 +182,8 @@ async function saveBukti(
     return `Maksimal ${MAX_BUKTI_PER_TX} bukti per transaksi (sekarang sudah ${existing}).`;
 
   for (const f of usable) {
-    if (!EXT_BY_MIME[f.type])
-      return `"${f.name}" bukan gambar yang didukung (JPG, PNG, WEBP, atau GIF).`;
-    if (f.size > MAX_BUKTI_BYTES)
-      return `"${f.name}" lebih dari 5 MB.`;
+    const problem = buktiProblem(f);
+    if (problem) return problem;
   }
 
   const now = new Date().toISOString();
@@ -229,10 +243,10 @@ export async function createTransaction(
     const now = new Date().toISOString();
     const res = run(
       `INSERT INTO transactions
-         (date, type, amount_usdt, fee_usdt, rate_idr, category_id, brand_id,
+         (date, type, amount_usdt, fee_usdt, fee_pct, rate_idr, category_id, brand_id,
           description, counterparty, tx_hash, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      v.date, v.type, v.amount, v.fee, v.rate, v.categoryId, v.brandId,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      v.date, v.type, v.amount, v.fee, v.feePct, v.rate, v.categoryId, v.brandId,
       v.description, v.counterparty, v.txHash, me.id, now,
     );
     newId = Number(res.lastInsertRowid);
@@ -308,11 +322,11 @@ export async function updateTransaction(
   try {
     run(
       `UPDATE transactions SET
-         date = ?, type = ?, amount_usdt = ?, fee_usdt = ?, rate_idr = ?,
+         date = ?, type = ?, amount_usdt = ?, fee_usdt = ?, fee_pct = ?, rate_idr = ?,
          category_id = ?, brand_id = ?, description = ?, counterparty = ?,
          tx_hash = ?, updated_at = ?
        WHERE id = ?`,
-      v.date, v.type, v.amount, v.fee, v.rate, v.categoryId, v.brandId,
+      v.date, v.type, v.amount, v.fee, v.feePct, v.rate, v.categoryId, v.brandId,
       v.description, v.counterparty, v.txHash, new Date().toISOString(), id,
     );
   } catch (e) {
@@ -390,7 +404,13 @@ export async function addBukti(
   if (isLocked(t.date)) return { ok: false, error: lockError(t.date) };
 
   const err = await saveBukti(id, fd.getAll("bukti") as File[], me);
-  if (err) return { ok: false, error: err };
+  if (err) {
+    // Kegagalan bisa datang di tengah antrean, setelah beberapa berkas terlanjur
+    // tersimpan. Daftar tetap disegarkan supaya yang sudah masuk langsung
+    // terlihat — kalau tidak, orang mengulang unggahan dan menggandakannya.
+    refresh();
+    return { ok: false, error: err };
+  }
 
   logActivity(me, "tambah-bukti", `#${id}`);
   await touchSession(me);
@@ -486,13 +506,15 @@ export async function decideRequest(
       inTransaction(() => {
         run(
           `UPDATE transactions SET
-             date = ?, type = ?, amount_usdt = ?, fee_usdt = ?, rate_idr = ?,
+             date = ?, type = ?, amount_usdt = ?, fee_usdt = ?, fee_pct = ?, rate_idr = ?,
              category_id = ?, brand_id = ?, description = ?, counterparty = ?,
              tx_hash = ?, updated_at = ?
            WHERE id = ?`,
-          v.date, v.type, v.amount, v.fee, v.rate ?? null, v.categoryId ?? null,
-          v.brandId ?? null, v.description ?? "", v.counterparty ?? "",
-          v.txHash ?? "", now, current.id,
+          // Pengajuan yang dibuat sebelum kolom fee ada tidak memuat feePct —
+          // dibaca 0 supaya persetujuan lama tidak berubah jadi NULL.
+          v.date, v.type, v.amount, v.fee, v.feePct ?? 0, v.rate ?? null,
+          v.categoryId ?? null, v.brandId ?? null, v.description ?? "",
+          v.counterparty ?? "", v.txHash ?? "", now, current.id,
         );
         run(
           `UPDATE requests SET status = 'approved', decided_by = ?, decided_at = ?, decision_note = ?

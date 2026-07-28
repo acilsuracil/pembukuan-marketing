@@ -211,6 +211,9 @@ export interface Summary {
   outUsdt: number;
   inIdr: number;
   outIdr: number;
+  /** Bagian dari uang keluar yang berupa fee agency — sudah termasuk di outUsdt. */
+  feeAgencyUsdt: number;
+  feeAgencyIdr: number;
   lastRate: number | null;
   lastRateDate: string | null;
   avgRate: number | null;
@@ -225,6 +228,8 @@ export function getSummary(f: TxFilter = {}): Summary {
     out_usdt: number | null;
     in_idr: number | null;
     out_idr: number | null;
+    fee_agency_usdt: number | null;
+    fee_agency_idr: number | null;
     n: number;
   }>(
     `SELECT
@@ -232,6 +237,8 @@ export function getSummary(f: TxFilter = {}): Summary {
        SUM(CASE WHEN type = 'out' THEN flow_usdt END)             AS out_usdt,
        SUM(CASE WHEN type = 'in'  THEN flow_usdt * eff_rate END)  AS in_idr,
        SUM(CASE WHEN type = 'out' THEN flow_usdt * eff_rate END)  AS out_idr,
+       SUM(CASE WHEN type = 'out' THEN fee_pct_usdt END)          AS fee_agency_usdt,
+       SUM(CASE WHEN type = 'out' THEN fee_pct_usdt * eff_rate END) AS fee_agency_idr,
        COUNT(*) AS n
      FROM tx_view ${sql}`,
     ...params,
@@ -262,6 +269,9 @@ export function getSummary(f: TxFilter = {}): Summary {
     outUsdt: agg?.out_usdt ?? 0,
     inIdr: agg?.in_idr ?? 0,
     outIdr: agg?.out_idr ?? 0,
+    /** Bagian dari "uang keluar" yang sebenarnya fee agency, bukan belanja. */
+    feeAgencyUsdt: agg?.fee_agency_usdt ?? 0,
+    feeAgencyIdr: agg?.fee_agency_idr ?? 0,
     lastRate,
     lastRateDate: last?.date ?? null,
     avgRate: avg?.q ? (avg.w ?? 0) / avg.q : null,

@@ -88,7 +88,17 @@ export default async function LaporanPage({
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatTile label="Uang masuk" value={fmtUsdt(s.inUsdt)} sub={fmtIdr(s.inIdr)} />
-        <StatTile label="Uang keluar" value={fmtUsdt(s.outUsdt)} sub={fmtIdr(s.outIdr)} />
+        <StatTile
+          label="Uang keluar"
+          value={fmtUsdt(s.outUsdt)}
+          // Fee agency ikut terhitung di angka besar itu; disebut terpisah supaya
+          // terlihat berapa yang jadi belanja dan berapa yang jadi ongkos perantara.
+          sub={
+            s.feeAgencyUsdt > 0
+              ? `${fmtIdr(s.outIdr)} · termasuk fee agency ${fmtUsdt(s.feeAgencyUsdt)}`
+              : fmtIdr(s.outIdr)
+          }
+        />
         <StatTile
           label="Arus bersih"
           value={`${s.inUsdt - s.outUsdt >= 0 ? "+" : "−"}${fmtUsdt(

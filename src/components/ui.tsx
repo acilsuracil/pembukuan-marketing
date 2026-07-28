@@ -8,17 +8,19 @@ export function FormButton({
   pendingLabel = "…",
   className = "btn btn-primary",
   confirm,
+  disabled = false,
 }: {
   children: React.ReactNode;
   pendingLabel?: string;
   className?: string;
   confirm?: string;
+  disabled?: boolean;
 }) {
   const { pending } = useFormStatus();
   return (
     <button
       type="submit"
-      disabled={pending}
+      disabled={pending || disabled}
       className={className}
       onClick={(e) => {
         if (confirm && !window.confirm(confirm)) e.preventDefault();

@@ -5,6 +5,7 @@ import TxForm from "@/components/TxForm";
 import { fmtDate } from "@/lib/format";
 import { hasPerm, isLocked } from "@/lib/policy";
 import {
+  attachmentsOf,
   getTransaction,
   incomeRates,
   listBrands,
@@ -73,6 +74,7 @@ export default async function UbahTransaksiPage({
             inRates={incomeRates()}
             initial={t}
             canEditDirectly={hasPerm(user, "edit")}
+            buktiTaken={attachmentsOf(t.id).length}
           />
         </section>
       )}

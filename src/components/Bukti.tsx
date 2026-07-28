@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useState } from "react";
 import { addBukti, deleteBukti, type ActionState } from "@/app/actions";
 import type { Attachment } from "@/lib/types";
+import BuktiInput from "./BuktiInput";
 import { Alert, FormButton } from "./ui";
 
 const EMPTY: ActionState = { ok: false };
@@ -47,14 +48,29 @@ export default function Bukti({
   const canDelete = (a: Attachment) => canDeleteAny || a.uploaded_by === currentUserId;
   const router = useRouter();
   const [state, action] = useActionState(addBukti, EMPTY);
-  const [picked, setPicked] = useState(0);
-  // Setelah unggahan berhasil, input file sudah di-reset React — jadi hitungannya
-  // diturunkan dari hasil aksi, bukan di-set ulang dari dalam effect.
-  const count = state.ok ? 0 : picked;
+  const [count, setCount] = useState(0);
+  const [round, setRound] = useState(0);
 
+  // Disegarkan pada tiap hasil aksi, bukan hanya yang berhasil: unggahan yang
+  // gagal di tengah antrean tetap menyisakan berkas yang sudah tersimpan, dan
+  // itu harus langsung terlihat di daftar.
   useEffect(() => {
-    if (state.ok) router.refresh();
-  }, [state.ok, router]);
+    if (state !== EMPTY) router.refresh();
+  }, [state, router]);
+
+  // Pemilih dikosongkan begitu aksi selesai dengan sukses — bukan menunggu
+  // router.refresh() membawa daftar baru. Di sela itu tombol akan hidup lagi
+  // dengan berkas yang sama masih terpasang, dan klik kedua mengunggah bukti
+  // yang persis sama untuk kedua kalinya. Aksi yang gagal tidak mengosongkan
+  // apa pun, jadi berkasnya tetap aman untuk dicoba ulang.
+  const [seen, setSeen] = useState(state);
+  if (state !== seen) {
+    setSeen(state);
+    if (state.ok) {
+      setCount(0);
+      setRound((n) => n + 1);
+    }
+  }
 
   return (
     <section className="card p-4 sm:p-5">
@@ -110,18 +126,20 @@ export default function Bukti({
           <label className="label" htmlFor={`bukti-${txId}`}>
             Tambah bukti
           </label>
-          <input
+          {/* Kunci berganti tiap unggahan berhasil, jadi pemilih dipasang ulang
+              dan pratinjau yang sudah tersimpan tidak tertinggal di formulir. */}
+          <BuktiInput
+            key={round}
             id={`bukti-${txId}`}
-            name="bukti"
-            type="file"
-            accept="image/jpeg,image/png,image/webp,image/gif"
-            multiple
-            required
-            className="field cursor-pointer file:mr-3 file:rounded-md file:border-0 file:bg-[var(--wash)] file:px-2.5 file:py-1 file:text-xs file:text-[var(--text-primary)]"
-            onChange={(e) => setPicked(e.target.files?.length ?? 0)}
+            taken={items.length}
+            onChange={setCount}
           />
           <div className="flex items-center gap-3">
-            <FormButton className="btn btn-primary text-xs" pendingLabel="Mengunggah…">
+            <FormButton
+              className="btn btn-primary text-xs"
+              pendingLabel="Mengunggah…"
+              disabled={count === 0}
+            >
               Unggah{count > 0 ? ` ${count} berkas` : ""}
             </FormButton>
             <span className="text-[11px] text-[var(--text-muted)]">

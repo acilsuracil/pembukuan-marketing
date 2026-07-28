@@ -243,6 +243,10 @@ function migrate(db: DatabaseSync) {
   // Backend penyimpanan bukti per baris, supaya berkas lama di disk tetap
   // terbaca setelah pindah ke Supabase Storage.
   addColumn(db, "attachments", "storage", "TEXT NOT NULL DEFAULT 'local'");
+  // Fee agency dalam persen — dihitung dari nominal, lalu diperlakukan sama
+  // seperti biaya jaringan. Disimpan sebagai persen (bukan hasil kalinya) supaya
+  // kesepakatan aslinya tetap terbaca kalau nominalnya kelak diperbaiki.
+  addColumn(db, "transactions", "fee_pct", "REAL NOT NULL DEFAULT 0");
   db.exec(`CREATE INDEX IF NOT EXISTS idx_tx_brand ON transactions (brand_id)`);
 
   db.exec(`
@@ -251,9 +255,12 @@ function migrate(db: DatabaseSync) {
     DROP VIEW IF EXISTS tx_view;
     CREATE VIEW tx_view AS
     SELECT
-      t.id, t.date, t.type, t.amount_usdt, t.fee_usdt, t.rate_idr,
+      t.id, t.date, t.type, t.amount_usdt, t.fee_usdt, t.fee_pct, t.rate_idr,
       t.category_id, t.brand_id, t.description, t.counterparty, t.tx_hash,
       t.created_by, t.created_at, t.updated_at,
+      -- Dibulatkan ke 2 desimal supaya nilai yang dipakai berhitung sama persis
+      -- dengan angka yang ditampilkan; tanpa itu total bisa meleset sesen dua sen.
+      ROUND(t.amount_usdt * t.fee_pct / 100.0, 2) AS fee_pct_usdt,
       c.name       AS category_name,
       c.color_slot AS color_slot,
       b.name       AS brand_name,
@@ -270,12 +277,12 @@ function migrate(db: DatabaseSync) {
       )) AS eff_rate,
       CASE WHEN t.rate_idr IS NULL THEN 'warisan' ELSE 'manual' END AS rate_source,
       CASE WHEN t.type = 'in'
-           THEN t.amount_usdt - t.fee_usdt
-           ELSE -(t.amount_usdt + t.fee_usdt)
+           THEN t.amount_usdt - t.fee_usdt - ROUND(t.amount_usdt * t.fee_pct / 100.0, 2)
+           ELSE -(t.amount_usdt + t.fee_usdt + ROUND(t.amount_usdt * t.fee_pct / 100.0, 2))
       END AS delta_usdt,
       CASE WHEN t.type = 'in'
-           THEN t.amount_usdt - t.fee_usdt
-           ELSE t.amount_usdt + t.fee_usdt
+           THEN t.amount_usdt - t.fee_usdt - ROUND(t.amount_usdt * t.fee_pct / 100.0, 2)
+           ELSE t.amount_usdt + t.fee_usdt + ROUND(t.amount_usdt * t.fee_pct / 100.0, 2)
       END AS flow_usdt,
       substr(t.date, 1, 7) AS month,
       (SELECT COUNT(*) FROM attachments a WHERE a.tx_id = t.id) AS bukti_count,

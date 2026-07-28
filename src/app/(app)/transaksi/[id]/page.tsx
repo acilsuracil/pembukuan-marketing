@@ -47,6 +47,19 @@ export default async function DetailTransaksiPage({
     ],
     ["Kategori", t.category_name ?? "—"],
     ["Nominal", fmtUsdt(t.amount_usdt)],
+    [
+      "Fee agency",
+      t.fee_pct > 0 ? (
+        <>
+          {fmtUsdt(t.fee_pct_usdt)}{" "}
+          <span className="text-xs text-[var(--text-muted)]">
+            ({t.fee_pct}% dari nominal)
+          </span>
+        </>
+      ) : (
+        "—"
+      ),
+    ],
     ["Biaya jaringan", t.fee_usdt > 0 ? fmtUsdt(t.fee_usdt) : "—"],
     [
       "Arus kas",
