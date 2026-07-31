@@ -52,6 +52,41 @@ Saldo dompet adalah **satu kolam bersama**, bukan per brand. Yang dilaporkan per
 brand adalah besar pemakaiannya, termasuk matriks brand × kategori di halaman
 Laporan. Budget bulanan bisa dipasang di dua tingkat: per brand dan per kategori.
 
+### Satu pembayaran untuk beberapa brand
+
+Saat mencatat, brand boleh dicentang lebih dari satu. Porsi tiap brand diisi
+sebagai **nominal USDT atau persen** — dua kolom yang saling mengejar, jadi
+kesepakatan "600 USDT untuk A" dan "60% untuk A" sama-sama bisa ditulis apa
+adanya. Ada tombol **Bagi rata** dan **Limpahkan sisa** untuk persen yang tidak
+genap.
+
+Saat disimpan, pembayarannya **dipecah jadi satu transaksi per brand**, masing-
+masing sebesar porsinya. Biaya jaringan ikut dibagi mengikuti perbandingan
+porsinya. Pecahan-pecahan itu diikat satu penanda grup, dan di daftar transaksi
+ditandai `⧉ 1/3`.
+
+Alasannya memecah baris, bukan menyimpan daftar brand di satu baris: setiap baris
+tetap punya tepat satu brand, jadi seluruh laporan, matriks brand × kategori,
+budget meter, filter, dan ekspor CSV tetap benar tanpa perlu diubah — dan saldo
+dompet tetap pas karena jumlah pecahannya sama persis dengan nominal aslinya.
+Jumlah porsi diperiksa di server sampai satuan terkecil (6 desimal); porsi yang
+tidak berjumlah pas ditolak, bukan dibulatkan diam-diam.
+
+Konsekuensi yang perlu diketahui:
+
+- **Bukti transfer** menempel di porsi pertama — buktinya milik pembayarannya,
+  bukan milik salah satu porsi — tapi ditampilkan di halaman detail setiap porsi.
+- **Mengubah** hanya mengenai satu porsi. Kalau pembagiannya yang salah, hapus
+  lalu catat ulang.
+- **Menghapus** membuang seluruh porsi dalam grup itu, termasuk lewat persetujuan
+  pengajuan staff. Menyisakan sebagian akan membuat pembukuan mencatat pembayaran
+  yang lebih kecil dari kenyataan.
+- **Fee agency** disimpan sebagai persen yang sama di tiap pecahan, supaya
+  kesepakatan aslinya tetap terbaca. Karena tiap baris membulatkan hasilnya
+  sendiri ke 2 desimal, totalnya bisa berbeda **maksimal 0,01 USDT** dari kalau
+  dicatat sebagai satu baris (mis. 2% dari 1.000 dibagi rata 3 → 20,01 alih-alih
+  20,00).
+
 ## Peran & izin
 
 Tiga peran: **Owner**, **Admin**, **Staff**. Akun pertama yang dibuat otomatis

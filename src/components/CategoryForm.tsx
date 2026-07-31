@@ -7,6 +7,7 @@ import { useFormStatus } from "react-dom";
 import { saveCategory, type ActionState } from "@/app/actions";
 import { SLOT_HEX_LIGHT, SLOT_NAMES } from "@/lib/palette";
 import type { Category } from "@/lib/types";
+import { blurOnWheel } from "./ui";
 
 const EMPTY: ActionState = { ok: false };
 
@@ -148,6 +149,7 @@ export default function CategoryForm({ initial }: { initial?: Category }) {
             id="c-budget"
             name="budget_usdt"
             type="number"
+            onWheel={blurOnWheel}
             step="0.01"
             min="0"
             className="field tnum"

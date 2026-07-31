@@ -247,7 +247,20 @@ function migrate(db: DatabaseSync) {
   // seperti biaya jaringan. Disimpan sebagai persen (bukan hasil kalinya) supaya
   // kesepakatan aslinya tetap terbaca kalau nominalnya kelak diperbaiki.
   addColumn(db, "transactions", "fee_pct", "REAL NOT NULL DEFAULT 0");
+  // Satu pembayaran yang dipakai beberapa brand dicatat sebagai beberapa baris —
+  // satu baris per brand, masing-masing sebesar porsinya. Kolom ini yang
+  // mengikat pecahan-pecahan itu jadi satu asal.
+  //
+  // Sengaja memecah baris, bukan menyimpan daftar brand di satu baris: setiap
+  // baris tetap punya tepat satu brand, jadi seluruh laporan, matriks
+  // brand × kategori, budget meter, filter, dan ekspor CSV tetap benar tanpa
+  // diubah sama sekali — dan saldo dompet tetap pas karena jumlah pecahannya
+  // sama dengan nominal aslinya.
+  //
+  // NULL = transaksi biasa, bukan hasil pembagian.
+  addColumn(db, "transactions", "split_group", "TEXT");
   db.exec(`CREATE INDEX IF NOT EXISTS idx_tx_brand ON transactions (brand_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_tx_split ON transactions (split_group)`);
 
   db.exec(`
     -- Aturan kurs: pemasukan memakai kurs belinya sendiri; pengeluaran mewarisi
@@ -257,7 +270,23 @@ function migrate(db: DatabaseSync) {
     SELECT
       t.id, t.date, t.type, t.amount_usdt, t.fee_usdt, t.fee_pct, t.rate_idr,
       t.category_id, t.brand_id, t.description, t.counterparty, t.tx_hash,
-      t.created_by, t.created_at, t.updated_at,
+      t.created_by, t.created_at, t.updated_at, t.split_group,
+      -- Kolom grup ditulis lewat CASE, bukan subquery telanjang: split_group
+      -- yang NULL tidak akan cocok dengan apa pun lewat tanda sama dengan
+      -- (termasuk NULL lainnya), jadi subquerinya berjalan sia-sia untuk
+      -- mayoritas baris.
+      CASE WHEN t.split_group IS NULL THEN 1 ELSE (
+        SELECT COUNT(*) FROM transactions s WHERE s.split_group = t.split_group
+      ) END AS split_count,
+      CASE WHEN t.split_group IS NULL THEN 1 ELSE (
+        SELECT COUNT(*) FROM transactions s
+        WHERE s.split_group = t.split_group AND s.id <= t.id
+      ) END AS split_index,
+      -- Baris pertama grup memegang bukti transfernya: buktinya satu, milik
+      -- pembayarannya, bukan milik salah satu porsi.
+      CASE WHEN t.split_group IS NULL THEN t.id ELSE (
+        SELECT MIN(s.id) FROM transactions s WHERE s.split_group = t.split_group
+      ) END AS split_head_id,
       -- Dibulatkan ke 2 desimal supaya nilai yang dipakai berhitung sama persis
       -- dengan angka yang ditampilkan; tanpa itu total bisa meleset sesen dua sen.
       ROUND(t.amount_usdt * t.fee_pct / 100.0, 2) AS fee_pct_usdt,
@@ -285,7 +314,12 @@ function migrate(db: DatabaseSync) {
            ELSE t.amount_usdt + t.fee_usdt + ROUND(t.amount_usdt * t.fee_pct / 100.0, 2)
       END AS flow_usdt,
       substr(t.date, 1, 7) AS month,
-      (SELECT COUNT(*) FROM attachments a WHERE a.tx_id = t.id) AS bukti_count,
+      -- Dihitung dari pemegang buktinya, bukan dari barisnya sendiri: kalau
+      -- tidak, dua dari tiga porsi akan tampil seolah tidak ada bukti transfernya.
+      (SELECT COUNT(*) FROM attachments a WHERE a.tx_id = CASE
+         WHEN t.split_group IS NULL THEN t.id
+         ELSE (SELECT MIN(s.id) FROM transactions s WHERE s.split_group = t.split_group)
+       END) AS bukti_count,
       (SELECT COUNT(*) FROM requests r WHERE r.tx_id = t.id AND r.status = 'pending') AS pending_count
     FROM transactions t
     LEFT JOIN categories c ON c.id = t.category_id

@@ -49,6 +49,7 @@ export default function Bukti({
   const router = useRouter();
   const [state, action] = useActionState(addBukti, EMPTY);
   const [count, setCount] = useState(0);
+  const [busy, setBusy] = useState(false);
   const [round, setRound] = useState(0);
 
   // Disegarkan pada tiap hasil aksi, bukan hanya yang berhasil: unggahan yang
@@ -133,17 +134,18 @@ export default function Bukti({
             id={`bukti-${txId}`}
             taken={items.length}
             onChange={setCount}
+            onBusy={setBusy}
           />
           <div className="flex items-center gap-3">
             <FormButton
               className="btn btn-primary text-xs"
               pendingLabel="Mengunggah…"
-              disabled={count === 0}
+              disabled={count === 0 || busy}
             >
-              Unggah{count > 0 ? ` ${count} berkas` : ""}
+              {busy ? "Menyiapkan…" : `Unggah${count > 0 ? ` ${count} berkas` : ""}`}
             </FormButton>
             <span className="text-[11px] text-[var(--text-muted)]">
-              JPG, PNG, WEBP, GIF · maks 5 MB per berkas
+              JPG, PNG, WEBP, GIF · gambar besar dikecilkan sendiri
             </span>
           </div>
         </form>

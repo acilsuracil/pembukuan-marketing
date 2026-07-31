@@ -203,6 +203,17 @@ export function getTransaction(id: number): TxRow | undefined {
   return one<TxRow>(`SELECT * FROM tx_view WHERE id = ?`, id);
 }
 
+/**
+ * Seluruh pecahan dari satu pembayaran yang dibagi ke beberapa brand, terurut
+ * seperti saat dicatat. Daftar kosong kalau grupnya tidak ada.
+ */
+export function splitMembers(group: string): TxRow[] {
+  return all<TxRow>(
+    `SELECT * FROM tx_view WHERE split_group = ? ORDER BY id`,
+    group,
+  );
+}
+
 /* ---------------------------------------------------------------- ringkasan */
 
 export interface Summary {

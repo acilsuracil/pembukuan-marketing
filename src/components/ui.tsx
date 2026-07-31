@@ -1,7 +1,33 @@
 "use client";
 
+import type { WheelEvent } from "react";
 import { useFormStatus } from "react-dom";
 import type { ActionState } from "@/app/actions";
+
+/**
+ * Roda mouse tidak boleh mengubah angka. Dipasang di **setiap**
+ * `<input type="number">` di aplikasi ini.
+ *
+ * Chrome dan Firefox menaik-turunkan nilai input number sebesar satu `step`
+ * setiap kali digulir selagi kolomnya terfokus. Orang mengetik kurs, lalu
+ * menggulir halaman untuk mencapai tombol Simpan — dan yang tersimpan 18.119
+ * padahal yang diketik 18.120. Pada kolom ber-`step="0.000001"` gejalanya jadi
+ * 1,5 berubah menjadi 1,499999.
+ *
+ * Justru itu yang membuatnya berbahaya di pembukuan: selisihnya tepat satu step,
+ * jadi terlalu kecil untuk terlihat salah saat diperiksa sekilas, tapi cukup
+ * untuk membuat angka rupiah dan saldo tidak pernah benar-benar cocok — dan
+ * tidak ada satu pun jejak yang menunjukkan siapa mengubahnya.
+ *
+ * Yang dilepas fokusnya, bukan event-nya yang dibatalkan. `preventDefault` akan
+ * menghentikan gulir halamannya juga, dan React memasang `onWheel` sebagai
+ * passive listener yang memang tidak boleh membatalkan. Melepas fokus membuat
+ * kenaikan nilainya tidak berlaku — browser hanya melakukannya pada kolom yang
+ * terfokus — sementara halamannya tetap tergulir seperti yang diminta.
+ */
+export function blurOnWheel(e: WheelEvent<HTMLInputElement>) {
+  e.currentTarget.blur();
+}
 
 export function FormButton({
   children,

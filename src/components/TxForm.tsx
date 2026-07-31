@@ -11,15 +11,17 @@ import {
 } from "@/app/actions";
 import { fmtIdr, fmtRate, fmtUsdt, todayISO } from "@/lib/format";
 import type { Brand, Category, TxRow } from "@/lib/types";
+import BrandSplit from "./BrandSplit";
 import BuktiInput from "./BuktiInput";
+import { blurOnWheel } from "./ui";
 
 const EMPTY: ActionState = { ok: false };
 
-function SubmitButton({ label }: { label: string }) {
+function SubmitButton({ label, busy }: { label: string; busy?: boolean }) {
   const { pending } = useFormStatus();
   return (
-    <button type="submit" className="btn btn-primary" disabled={pending}>
-      {pending ? "Menyimpan…" : label}
+    <button type="submit" className="btn btn-primary" disabled={pending || busy}>
+      {pending ? "Menyimpan…" : busy ? "Menyiapkan bukti…" : label}
     </button>
   );
 }
@@ -59,6 +61,7 @@ export default function TxForm({
     initial?.rate_idr != null ? String(initial.rate_idr) : "",
   );
   const [fileCount, setFileCount] = useState(0);
+  const [buktiBusy, setBuktiBusy] = useState(false);
 
   useEffect(() => {
     if (!state.ok) return;
@@ -190,37 +193,52 @@ export default function TxForm({
           />
         </div>
 
-        <div>
-          <label className="label" htmlFor="brand_id">
-            Brand{" "}
-            {type === "out" ? (
-              <span className="text-[var(--status-critical)]">*</span>
-            ) : (
-              <span className="font-normal text-[var(--text-muted)]">— opsional</span>
-            )}
-          </label>
-          <select
-            id="brand_id"
-            name="brand_id"
-            className="field"
-            required={type === "out"}
-            defaultValue={initial?.brand_id ?? ""}
-          >
-            <option value="">
-              {type === "out" ? "— Pilih brand —" : "— Tanpa brand —"}
-            </option>
-            {brands.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
+        {/* Pembagian ke beberapa brand hanya ditawarkan saat mencatat baru.
+            Mengubah pecahan yang sudah ada berarti menyusun ulang seluruh
+            grupnya — termasuk baris-baris yang tidak sedang dibuka — dan itu
+            tidak bisa diwakili oleh satu pengajuan perubahan. Ubahan di sini
+            berlaku untuk satu porsi saja; lihat catatan di halaman detail. */}
+        {editing ? (
+          <div>
+            <label className="label" htmlFor="brand_id">
+              Brand{" "}
+              {type === "out" ? (
+                <span className="text-[var(--status-critical)]">*</span>
+              ) : (
+                <span className="font-normal text-[var(--text-muted)]">— opsional</span>
+              )}
+            </label>
+            <select
+              id="brand_id"
+              name="brand_id"
+              className="field"
+              required={type === "out"}
+              defaultValue={initial?.brand_id ?? ""}
+            >
+              <option value="">
+                {type === "out" ? "— Pilih brand —" : "— Tanpa brand —"}
               </option>
-            ))}
-          </select>
-          <p className="hint">
-            {type === "out"
-              ? "Menentukan pemakaian USDT ini masuk ke brand mana."
-              : "Top-up biasanya masuk kolam bersama — isi hanya kalau memang titipan brand tertentu."}
-          </p>
-        </div>
+              {brands.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+            <p className="hint">
+              {type === "out"
+                ? "Menentukan pemakaian USDT ini masuk ke brand mana."
+                : "Top-up biasanya masuk kolam bersama — isi hanya kalau memang titipan brand tertentu."}
+            </p>
+          </div>
+        ) : (
+          <div className="sm:col-span-2">
+            <BrandSplit
+              brands={brands}
+              amount={amountNum}
+              required={type === "out"}
+            />
+          </div>
+        )}
 
         <div>
           <label className="label" htmlFor="category_id">
@@ -253,6 +271,7 @@ export default function TxForm({
             id="amount_usdt"
             name="amount_usdt"
             type="number"
+            onWheel={blurOnWheel}
             step="0.000001"
             min="0"
             required
@@ -273,6 +292,7 @@ export default function TxForm({
             id="fee_usdt"
             name="fee_usdt"
             type="number"
+            onWheel={blurOnWheel}
             step="0.000001"
             min="0"
             inputMode="decimal"
@@ -297,6 +317,7 @@ export default function TxForm({
             id="fee_pct"
             name="fee_pct"
             type="number"
+            onWheel={blurOnWheel}
             step="0.01"
             min="0"
             max="100"
@@ -328,6 +349,7 @@ export default function TxForm({
             id="rate_idr"
             name="rate_idr"
             type="number"
+            onWheel={blurOnWheel}
             step="1"
             min="0"
             required={type === "in"}
@@ -413,9 +435,10 @@ export default function TxForm({
             Bukti transfer{" "}
             <span className="font-normal text-[var(--text-muted)]">— opsional</span>
           </label>
-          <BuktiInput id="bukti" onChange={setFileCount} />
+          <BuktiInput id="bukti" onChange={setFileCount} onBusy={setBuktiBusy} />
           <p className="hint">
-            JPG, PNG, WEBP, atau GIF. Maks 5 MB per berkas, 8 berkas per transaksi.
+            JPG, PNG, WEBP, atau GIF. Maks 8 berkas per transaksi — gambar besar
+            dikecilkan sendiri sebelum dikirim.
             {fileCount > 0 && (
               <>
                 {" "}
@@ -505,6 +528,7 @@ export default function TxForm({
 
       <div className="flex items-center gap-2">
         <SubmitButton
+          busy={buktiBusy}
           label={
             needsRequest
               ? "Ajukan perubahan"

@@ -71,6 +71,17 @@ export interface TxRow {
   month: string;
   bukti_count: number;
   pending_count: number;
+  /**
+   * Penanda satu pembayaran yang dipakai beberapa brand. Semua pecahannya
+   * memegang nilai yang sama; NULL berarti transaksi biasa.
+   */
+  split_group: string | null;
+  /** Jumlah pecahan dalam grup ini. 1 untuk transaksi biasa. */
+  split_count: number;
+  /** Urutan pecahan ini di dalam grupnya, mulai dari 1. */
+  split_index: number;
+  /** Baris yang memegang bukti transfer grup ini — dirinya sendiri kalau bukan pecahan. */
+  split_head_id: number;
 }
 
 export interface Attachment {

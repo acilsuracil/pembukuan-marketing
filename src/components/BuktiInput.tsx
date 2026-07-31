@@ -3,10 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BUKTI_ACCEPT,
+  buktiMimeProblem,
   buktiProblem,
+  buktiTotalProblem,
   EXT_BY_MIME,
   MAX_BUKTI_PER_TX,
 } from "@/lib/bukti";
+import { shrinkBukti } from "@/lib/shrink";
 
 /**
  * Nama bawaan yang diberikan browser untuk gambar dari papan klip — tidak
@@ -27,6 +30,20 @@ function namedForPaste(f: File, i: number): File {
   return new File([f], `tempel-${stamp}${seq}${ext}`, { type: f.type });
 }
 
+interface Picked {
+  /** Yang benar-benar dikirim — sudah dikecilkan bila memungkinkan. */
+  file: File;
+  /**
+   * Identitas berkas **aslinya**. Penyaring rangkap harus memakai ini, bukan
+   * berkas hasil kompresi: mengecilkan mengubah nama dan ukurannya, jadi
+   * membandingkan hasil kompresi dengan pilihan baru akan meloloskan gambar yang
+   * sama untuk kedua kalinya.
+   */
+  srcKey: string;
+}
+
+const srcKeyOf = (f: File) => `${f.name}:${f.size}`;
+
 /**
  * Pemilih bukti transfer: bisa dipilih dari berkas, diseret ke area, atau
  * ditempel langsung dari papan klip (Ctrl/Cmd+V) — jalur terakhir itu yang
@@ -34,23 +51,32 @@ function namedForPaste(f: File, i: number): File {
  *
  * Berkas hasil tempel/seret disuntikkan ke `<input type="file">` sungguhan
  * lewat DataTransfer, jadi Server Action tetap menerima FormData yang sama
- * seperti kalau berkas dipilih lewat dialog biasa.
+ * seperti kalau berkas dipilih lewat dialog biasa. Gambarnya dikecilkan lebih
+ * dulu di sini (lihat `lib/shrink`) supaya body POST-nya tetap kecil.
  */
 export default function BuktiInput({
   id,
   name = "bukti",
   taken = 0,
   onChange,
+  onBusy,
 }: {
   id: string;
   name?: string;
   /** Bukti yang sudah tersimpan di transaksi ini — memotong sisa kuota. */
   taken?: number;
   onChange?: (n: number) => void;
+  /**
+   * Sedang mengecilkan gambar. Pemanggil wajib mematikan tombol kirimnya selagi
+   * ini benar: berkasnya belum masuk ke `<input>`, jadi formulir yang terkirim
+   * di sela itu akan diam-diam berangkat tanpa bukti.
+   */
+  onBusy?: (busy: boolean) => void;
 }) {
-  const [files, setFiles] = useState<File[]>([]);
+  const [picked, setPicked] = useState<Picked[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [over, setOver] = useState(false);
+  const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const room = MAX_BUKTI_PER_TX - taken;
@@ -58,33 +84,44 @@ export default function BuktiInput({
   /**
    * Input berkas sungguhan tetap jadi satu-satunya sumber bagi FormData — state
    * React hanya mengemudikannya. Penyalinan dilakukan langsung, bukan lewat
-   * efek yang mengintip perubahan `files`: dialog berkas mengosongkan input
+   * efek yang mengintip perubahan `picked`: dialog berkas mengosongkan input
    * setiap kali dibuka, jadi daftar wajib ditulis ulang bahkan ketika state
    * tidak berubah (mis. pilihan ditolak) — kalau tidak, formulir diam-diam
    * terkirim tanpa berkas.
    */
-  function syncInput(next: File[]) {
+  function syncInput(next: Picked[]) {
     const el = inputRef.current;
     if (!el) return;
     const dt = new DataTransfer();
-    for (const f of next) dt.items.add(f);
+    for (const p of next) dt.items.add(p.file);
     el.files = dt.files;
   }
 
   const previews = useMemo(
-    () => files.map((f) => ({ f, url: URL.createObjectURL(f) })),
-    [files],
+    () => picked.map((p) => ({ f: p.file, url: URL.createObjectURL(p.file) })),
+    [picked],
   );
   useEffect(
     () => () => previews.forEach((p) => URL.revokeObjectURL(p.url)),
     [previews],
   );
 
-  function add(incoming: File[]) {
-    if (incoming.length === 0) return reject(null);
+  function mark(next: boolean) {
+    setBusy(next);
+    onBusy?.(next);
+  }
 
+  async function add(incoming: File[]) {
+    if (incoming.length === 0) return reject(null);
+    // Dua pilihan yang tumpang tindih akan sama-sama menulis ulang daftar dari
+    // state yang sudah basi, dan yang belakangan menghapus yang duluan.
+    if (busy)
+      return reject("Masih mengecilkan gambar sebelumnya — coba lagi sebentar.");
+
+    // Jenis berkas diperiksa lebih dulu, sebelum pekerjaan berat: mengecilkan
+    // berkas yang jenisnya memang ditolak hanya membuat orang menunggu sia-sia.
     for (const f of incoming) {
-      const problem = buktiProblem(f);
+      const problem = buktiMimeProblem(f);
       if (problem) return reject(problem);
       // Server membuang berkas kosong tanpa bersuara, jadi kalau lolos ke sana
       // unggahan akan dilaporkan berhasil padahal tidak ada yang tersimpan.
@@ -93,26 +130,50 @@ export default function BuktiInput({
 
     // Berkas yang sama persis (nama + ukuran) tidak digandakan — menempel dua
     // kali karena ragu tidak boleh berubah jadi dua lampiran identik.
-    const seen = new Set(files.map((f) => `${f.name}:${f.size}`));
-    const fresh = incoming.filter((f) => !seen.has(`${f.name}:${f.size}`));
+    const seen = new Set(picked.map((p) => p.srcKey));
+    const fresh = incoming.filter((f) => !seen.has(srcKeyOf(f)));
     if (fresh.length === 0) return reject(null);
 
-    if (files.length + fresh.length > room)
+    if (picked.length + fresh.length > room)
       return reject(
         `Maksimal ${MAX_BUKTI_PER_TX} bukti per transaksi` +
           (taken > 0 ? ` (sekarang sudah ${taken}).` : "."),
       );
 
-    commit([...files, ...fresh]);
+    mark(true);
+    let added: Picked[];
+    try {
+      added = await Promise.all(
+        fresh.map(async (f) => ({
+          file: await shrinkBukti(f),
+          srcKey: srcKeyOf(f),
+        })),
+      );
+    } finally {
+      mark(false);
+    }
+
+    // Batas per berkas diuji pada hasil kompresinya — itu yang benar-benar
+    // dikirim, dan itu juga yang nanti diperiksa server.
+    for (const p of added) {
+      const problem = buktiProblem(p.file);
+      if (problem) return reject(problem);
+    }
+
+    const next = [...picked, ...added];
+    const total = buktiTotalProblem(next.map((p) => p.file));
+    if (total) return reject(total);
+
+    commit(next);
   }
 
   function remove(i: number) {
-    commit(files.filter((_, n) => n !== i));
+    commit(picked.filter((_, n) => n !== i));
   }
 
-  function commit(next: File[]) {
+  function commit(next: Picked[]) {
     setError(null);
-    setFiles(next);
+    setPicked(next);
     syncInput(next);
     onChange?.(next.length);
   }
@@ -120,7 +181,7 @@ export default function BuktiInput({
   /** Pilihan ditolak: state tidak berubah, tapi input tetap harus ditulis ulang. */
   function reject(message: string | null) {
     setError(message);
-    syncInput(files);
+    syncInput(picked);
   }
 
   // Tempel ditangkap di tingkat dokumen supaya tidak menuntut orang mengklik
@@ -133,13 +194,13 @@ export default function BuktiInput({
       );
       if (imgs.length === 0) return;
       e.preventDefault();
-      add(imgs.map(namedForPaste));
+      void add(imgs.map(namedForPaste));
     }
     document.addEventListener("paste", onPaste);
     return () => document.removeEventListener("paste", onPaste);
   });
 
-  const full = files.length >= room;
+  const full = picked.length >= room;
 
   return (
     <div>
@@ -152,7 +213,7 @@ export default function BuktiInput({
         multiple
         className="sr-only"
         tabIndex={-1}
-        onChange={(e) => add(Array.from(e.target.files ?? []))}
+        onChange={(e) => void add(Array.from(e.target.files ?? []))}
       />
 
       <div
@@ -164,7 +225,7 @@ export default function BuktiInput({
         onDrop={(e) => {
           e.preventDefault();
           setOver(false);
-          add(Array.from(e.dataTransfer.files));
+          void add(Array.from(e.dataTransfer.files));
         }}
         className="rounded-lg border border-dashed px-3 py-3 text-center transition"
         style={{
@@ -174,14 +235,16 @@ export default function BuktiInput({
       >
         <button
           type="button"
-          disabled={full}
+          disabled={full || busy}
           onClick={() => inputRef.current?.click()}
           className="btn btn-ghost text-xs"
         >
-          Pilih berkas
+          {busy ? "Mengecilkan…" : "Pilih berkas"}
         </button>
         <p className="hint mt-1.5">
-          {full ? (
+          {busy ? (
+            <>Gambar sedang dikecilkan supaya unggahannya tidak gagal di tengah.</>
+          ) : full ? (
             <>Kuota bukti transaksi ini sudah penuh.</>
           ) : (
             <>

@@ -2,13 +2,17 @@
 
 import crypto from "node:crypto";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { hashPassword, passwordProblem } from "@/lib/auth";
 import {
   buktiProblem,
+  buktiTotalProblem,
   EXT_BY_MIME,
   MAX_BUKTI_PER_TX,
 } from "@/lib/bukti";
 import { run, setSetting, tx as inTransaction } from "@/lib/db";
+import { fmtUsdt } from "@/lib/format";
+import { proportional, sameUsdt } from "@/lib/split";
 import { createBackup, removeBackup, restoreBackup } from "@/lib/backup";
 import { deleteObject, putObject } from "@/lib/storage";
 import { SLOT_COUNT } from "@/lib/palette";
@@ -32,6 +36,7 @@ import {
   getTransaction,
   getUserById,
   pendingRequestFor,
+  splitMembers,
 } from "@/lib/queries";
 import { getUser, touchSession, type SessionUser } from "@/lib/session";
 
@@ -166,6 +171,89 @@ function readTx(fd: FormData): { ok: false; error: string } | { ok: true; v: TxV
   };
 }
 
+/* ------------------------------------------------- pembagian antar brand */
+
+/** Satu baris yang akan ditulis: brand-nya beserta porsi nominal dan biayanya. */
+interface TxPart {
+  brandId: number | null;
+  amount: number;
+  fee: number;
+}
+
+/**
+ * Membaca brand yang dicentang beserta porsinya, lalu menerjemahkannya jadi
+ * daftar baris yang akan ditulis.
+ *
+ * Satu brand (atau tanpa brand) menghasilkan satu baris, persis seperti sebelum
+ * fitur ini ada — jadi transaksi biasa tidak berubah perilakunya sedikit pun.
+ *
+ * Porsi diterima dalam **nominal USDT**, bukan persen. Formulir boleh
+ * mempersilakan orang mengetik persen, tapi yang dikirim ke sini tetap hasil
+ * rupiahnya: persen 33,33% × 3 tidak pernah berjumlah 100%, dan menyimpan
+ * persen berarti menyimpan pembagian yang jumlahnya tidak pas.
+ */
+function readParts(
+  fd: FormData,
+  v: TxValues,
+): { ok: false; error: string } | { ok: true; parts: TxPart[] } {
+  const raw = fd
+    .getAll("brand_id")
+    .map((x) => String(x).trim())
+    .filter((s) => s !== "");
+  const ids = raw.map(Number);
+
+  if (ids.some((n) => !Number.isInteger(n) || n <= 0))
+    return { ok: false, error: "Brand tidak valid." };
+  // Brand kembar akan melahirkan dua baris untuk brand yang sama — pembukuannya
+  // tetap seimbang, tapi laporannya jadi membingungkan tanpa alasan.
+  if (new Set(ids).size !== ids.length)
+    return { ok: false, error: "Ada brand yang terpilih lebih dari sekali." };
+
+  if (ids.length === 0) {
+    if (v.type === "out")
+      return { ok: false, error: "Pengeluaran harus ditandai brand-nya." };
+    return { ok: true, parts: [{ brandId: null, amount: v.amount, fee: v.fee }] };
+  }
+
+  if (ids.length === 1)
+    return { ok: true, parts: [{ brandId: ids[0], amount: v.amount, fee: v.fee }] };
+
+  const shares: number[] = [];
+  for (const id of ids) {
+    const s = parseNum(fd.get(`share_${id}`));
+    if (s === null || s <= 0)
+      return {
+        ok: false,
+        error:
+          "Setiap brand yang dipilih harus punya porsi lebih besar dari 0. " +
+          `Nominal ${fmtUsdt(v.amount)} mungkin terlalu kecil untuk dibagi ke ${ids.length} brand.`,
+      };
+    shares.push(s);
+  }
+
+  // Jumlah porsi diperiksa di server, bukan hanya dijaga formulir. Ini satu-satunya
+  // hal yang tidak boleh keliru: porsi yang jumlahnya tidak sama dengan nominal
+  // akan membuat saldo dompet menyimpang tanpa jejak.
+  const sum = shares.reduce((a, b) => a + b, 0);
+  if (!sameUsdt(sum, v.amount))
+    return {
+      ok: false,
+      error: `Jumlah porsi ${fmtUsdt(sum)} tidak sama dengan nominalnya ${fmtUsdt(
+        v.amount,
+      )}. Selisih ${fmtUsdt(Math.abs(v.amount - sum))}.`,
+    };
+
+  // Biaya jaringan ikut dibagi mengikuti perbandingan porsinya. `fee_pct`
+  // sengaja tidak dibagi: nilainya persen, dan tiap baris menghitungnya dari
+  // porsinya sendiri — jadi kesepakatan aslinya tetap terbaca di setiap pecahan.
+  const fees = proportional(v.fee, shares);
+
+  return {
+    ok: true,
+    parts: ids.map((id, i) => ({ brandId: id, amount: shares[i], fee: fees[i] })),
+  };
+}
+
 /* ------------------------------------------------------------------ bukti */
 
 /** Menyimpan berkas bukti ke disk + mencatat barisnya. Mengembalikan pesan galat kalau ada. */
@@ -186,33 +274,66 @@ async function saveBukti(
     if (problem) return problem;
   }
 
+  const tooBig = buktiTotalProblem(usable);
+  if (tooBig) return tooBig;
+
   const now = new Date().toISOString();
-  for (const f of usable) {
-    const stored = `${crypto.randomUUID()}${EXT_BY_MIME[f.type]}`;
-    const buf = Buffer.from(await f.arrayBuffer());
-    let backend;
-    try {
-      backend = await putObject(stored, buf, f.type);
-    } catch (e) {
-      // Baris hanya dicatat kalau berkasnya benar-benar tersimpan, supaya tidak
-      // ada bukti yatim yang tampil di UI tapi tidak bisa dibuka.
-      return `Gagal menyimpan "${f.name}": ${(e as Error).message}`;
-    }
+
+  // Diunggah serentak, bukan satu per satu.
+  //
+  // Tiap berkas adalah satu round-trip ke Supabase Storage, dan berkas-berkas itu
+  // tidak saling bergantung sama sekali. Mengunggahnya berurutan membuat orang
+  // menunggu penjumlahan seluruh latensinya — 4 bukti berarti 4 kali lamanya,
+  // sementara transaksinya sudah tersimpan dan yang ditunggu cuma lampirannya.
+  //
+  // Batas gabungan `buktiTotalProblem` di atas sekaligus jadi pagar memorinya:
+  // yang dibuffer serentak tidak akan pernah melebihi batas itu.
+  const uploads = await Promise.all(
+    usable.map(async (f) => {
+      const stored = `${crypto.randomUUID()}${EXT_BY_MIME[f.type]}`;
+      try {
+        const buf = Buffer.from(await f.arrayBuffer());
+        return { ok: true as const, f, stored, backend: await putObject(stored, buf, f.type) };
+      } catch (e) {
+        return { ok: false as const, f, message: (e as Error).message };
+      }
+    }),
+  );
+
+  // Baris hanya dicatat untuk berkas yang benar-benar tersimpan, supaya tidak ada
+  // bukti yatim yang tampil di UI tapi tidak bisa dibuka. Ditulis setelah semua
+  // unggahan selesai, dalam urutan berkas aslinya, supaya daftar lampirannya
+  // tidak tersusun mengikuti siapa yang kebetulan selesai lebih dulu.
+  for (const u of uploads) {
+    if (!u.ok) continue;
     run(
       `INSERT INTO attachments
          (id, tx_id, stored_name, orig_name, mime, size, uploaded_by, created_at, storage)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       crypto.randomUUID(),
       txId,
-      stored,
-      f.name.slice(0, 160),
-      f.type,
-      f.size,
+      u.stored,
+      u.f.name.slice(0, 160),
+      u.f.type,
+      u.f.size,
       user.id,
       now,
-      backend,
+      u.backend,
     );
   }
+
+  // Yang gagal dilaporkan sebagai satu pesan, bukan menghentikan sisanya:
+  // unggahan ke-3 yang gagal tidak boleh membuang dua yang sudah berhasil.
+  // flatMap, bukan filter: hanya bentuk ini yang membuat TypeScript menyempitkan
+  // tipenya ke cabang gagal, sehingga `message` bisa dibaca tanpa penegasan tipe.
+  const failed = uploads.flatMap((u) => (u.ok ? [] : [u]));
+  if (failed.length > 0)
+    return (
+      `${failed.length} dari ${uploads.length} bukti gagal diunggah — ` +
+      failed.map((u) => `"${u.f.name}"`).join(", ") +
+      `. Yang lain tersimpan. (${failed[0].message})`
+    );
+
   return null;
 }
 
@@ -238,36 +359,62 @@ export async function createTransaction(
 
   if (isLocked(v.date)) return { ok: false, error: lockError(v.date) };
 
-  let newId: number;
+  const split = readParts(fd, v);
+  if (!split.ok) return { ok: false, error: split.error };
+  const { parts } = split;
+
+  // Penanda grup hanya dipasang kalau memang dibagi. Transaksi satu brand tetap
+  // `split_group = NULL`, jadi tidak ada baris lama yang berubah artinya.
+  const group = parts.length > 1 ? crypto.randomUUID() : null;
+
+  let ids: number[];
   try {
     const now = new Date().toISOString();
-    const res = run(
-      `INSERT INTO transactions
-         (date, type, amount_usdt, fee_usdt, fee_pct, rate_idr, category_id, brand_id,
-          description, counterparty, tx_hash, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      v.date, v.type, v.amount, v.fee, v.feePct, v.rate, v.categoryId, v.brandId,
-      v.description, v.counterparty, v.txHash, me.id, now,
+    // Seluruh pecahan ditulis dalam satu transaksi DB: separuh pecahan yang
+    // tersimpan lebih buruk daripada tidak tersimpan sama sekali — jumlahnya
+    // tidak akan sama dengan pembayaran aslinya, dan tidak ada yang memberi tahu.
+    ids = inTransaction(() =>
+      parts.map((p) => {
+        const res = run(
+          `INSERT INTO transactions
+             (date, type, amount_usdt, fee_usdt, fee_pct, rate_idr, category_id, brand_id,
+              description, counterparty, tx_hash, created_by, created_at, split_group)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          v.date, v.type, p.amount, p.fee, v.feePct, v.rate, v.categoryId, p.brandId,
+          v.description, v.counterparty, v.txHash, me.id, now, group,
+        );
+        return Number(res.lastInsertRowid);
+      }),
     );
-    newId = Number(res.lastInsertRowid);
   } catch (e) {
     return { ok: false, error: `Gagal menyimpan: ${(e as Error).message}` };
   }
 
-  const buktiErr = await saveBukti(newId, fd.getAll("bukti") as File[], me);
+  // Bukti transfer melekat pada baris pertama grup. Buktinya milik
+  // pembayarannya, bukan milik salah satu porsi — dan menyalin berkas yang sama
+  // ke tiap pecahan hanya menggandakan isi penyimpanan tanpa menambah informasi.
+  const headId = ids[0];
+  const buktiErr = await saveBukti(headId, fd.getAll("bukti") as File[], me);
+
+  const arah = v.type === "in" ? "masuk" : "keluar";
   logActivity(
     me,
     "tambah-transaksi",
-    `#${newId} ${v.type === "in" ? "masuk" : "keluar"} ${v.amount} USDT (${v.date})`,
+    parts.length > 1
+      ? `#${ids.join(", #")} ${arah} ${v.amount} USDT dibagi ${parts.length} brand (${v.date})`
+      : `#${headId} ${arah} ${v.amount} USDT (${v.date})`,
   );
   await touchSession(me);
   refresh();
 
+  const saved =
+    parts.length > 1
+      ? `Transaksi ${arah} ${fmtUsdt(v.amount)} tersimpan, dibagi ke ${parts.length} brand.`
+      : `Transaksi ${arah} tersimpan.`;
+
   return {
     ok: true,
-    message: buktiErr
-      ? `Transaksi tersimpan, tapi bukti gagal diunggah: ${buktiErr}`
-      : `Transaksi ${v.type === "in" ? "masuk" : "keluar"} tersimpan.`,
+    message: buktiErr ? `${saved} Tapi bukti gagal diunggah: ${buktiErr}` : saved,
   };
 }
 
@@ -380,12 +527,40 @@ export async function deleteTransaction(
     return { ok: true, message: "Pengajuan penghapusan dikirim ke admin." };
   }
 
-  await removeBuktiFiles(id);
-  run(`DELETE FROM transactions WHERE id = ?`, id);
-  logActivity(me, "hapus-transaksi", `#${id} ${current.date} ${current.flow_usdt} USDT`);
+  // Pembayaran yang dibagi dihapus utuh, bukan sepotong. Menyisakan 2 dari 3
+  // pecahan berarti pembukuannya mencatat pembayaran yang jumlahnya lebih kecil
+  // dari yang sebenarnya terjadi — dan tidak ada apa pun di panel yang akan
+  // memberi tahu bahwa satu porsinya hilang.
+  const victims = current.split_group ? splitMembers(current.split_group) : [current];
+
+  for (const t of victims) await removeBuktiFiles(t.id);
+  inTransaction(() => {
+    for (const t of victims) run(`DELETE FROM transactions WHERE id = ?`, t.id);
+  });
+
+  logActivity(
+    me,
+    "hapus-transaksi",
+    victims.length > 1
+      ? `#${victims.map((t) => t.id).join(", #")} — satu pembayaran ${current.date} ` +
+          `dibagi ${victims.length} brand, dihapus seluruhnya`
+      : `#${id} ${current.date} ${current.flow_usdt} USDT`,
+  );
   await touchSession(me);
   refresh();
-  return { ok: true, message: "Transaksi dihapus." };
+
+  // Pindah halaman dilakukan di sini, bukan diserahkan ke klien.
+  //
+  // Tombol hapus hanya ada di halaman detail transaksinya sendiri, dan
+  // `refresh()` di atas membuat Next me-render ulang route yang sedang dibuka
+  // sebagai bagian dari respons aksi ini. Barisnya sudah tidak ada, jadi render
+  // itu jatuh ke `notFound()` — yang dilihat orang 404, bukan daftar
+  // transaksinya. Redirect membuat responsnya berupa navigasi, sehingga halaman
+  // yang barisnya sudah hilang tidak pernah di-render sama sekali.
+  //
+  // Urutannya penting: revalidasi harus mendahului redirect supaya daftar
+  // tujuannya sudah tidak lagi memuat baris yang baru dihapus.
+  redirect("/transaksi");
 }
 
 /* -------------------------------------------------------- bukti terpisah */
@@ -488,9 +663,15 @@ export async function decideRequest(
 
   try {
     if (rq.type === "delete") {
-      await removeBuktiFiles(current.id);
+      // Sama seperti penghapusan langsung: pembayaran yang dibagi ikut seluruh
+      // pecahannya. Menyetujui pengajuan atas satu porsi tidak boleh
+      // meninggalkan porsi lain yang sudah tidak punya pasangan.
+      const victims = current.split_group
+        ? splitMembers(current.split_group)
+        : [current];
+      for (const t of victims) await removeBuktiFiles(t.id);
       inTransaction(() => {
-        run(`DELETE FROM transactions WHERE id = ?`, current.id);
+        for (const t of victims) run(`DELETE FROM transactions WHERE id = ?`, t.id);
         run(
           `UPDATE requests SET status = 'approved', decided_by = ?, decided_at = ?, decision_note = ?
            WHERE id = ?`,

@@ -152,6 +152,16 @@ export default function TxTable({
                   {t.bukti_count > 0 && (
                     <span title={`${t.bukti_count} bukti`}>📎 {t.bukti_count}</span>
                   )}
+                  {/* Tanpa penanda ini, tiga baris beruntun dengan nominal
+                      berbeda-beda terbaca seperti tiga pembayaran terpisah —
+                      dan totalnya akan disangka kelebihan hitung. */}
+                  {t.split_count > 1 && (
+                    <span
+                      title={`Porsi ${t.split_index} dari ${t.split_count} — satu pembayaran yang dibagi antar brand`}
+                    >
+                      ⧉ {t.split_index}/{t.split_count}
+                    </span>
+                  )}
                   {t.pending_count > 0 && (
                     <span style={{ color: "var(--status-serious)" }}>● pengajuan</span>
                   )}

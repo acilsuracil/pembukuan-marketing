@@ -11,11 +11,14 @@ export default function DeleteTxButton({
   txId,
   canDeleteDirectly,
   disabled,
+  splitCount = 1,
 }: {
   txId: number;
   /** Punya izin "delete"; kalau tidak, tombolnya jadi pengajuan. */
   canDeleteDirectly: boolean;
   disabled?: boolean;
+  /** Jumlah porsi dalam grupnya — >1 berarti penghapusan mengenai semuanya. */
+  splitCount?: number;
 }) {
   const router = useRouter();
   const [state, action] = useActionState(deleteTransaction, EMPTY);
@@ -26,10 +29,16 @@ export default function DeleteTxButton({
   const open = wantOpen && !state.ok;
 
   useEffect(() => {
-    // Admin: transaksinya benar-benar hilang, jadi pindah dari halaman detail.
-    if (state.ok && !isStaff) router.push("/transaksi");
-    else if (state.ok) router.refresh();
-  }, [state.ok, isStaff, router]);
+    // Hanya jalur pengajuan yang ditangani di sini: transaksinya masih ada, dan
+    // halaman perlu memperlihatkan bahwa sekarang ada pengajuan yang menunggu.
+    //
+    // Penghapusan sungguhan tidak diurus dari sini. `deleteTransaction`
+    // mengembalikan redirect ke daftar transaksi, jadi navigasinya sudah terjadi
+    // bersama respons aksinya — dan itu memang harus di server: mendorongnya
+    // dari klien berarti halaman detail yang barisnya sudah hilang sempat
+    // di-render lebih dulu, dan yang muncul 404.
+    if (state.ok) router.refresh();
+  }, [state.ok, router]);
 
   if (disabled) {
     return (
@@ -45,7 +54,13 @@ export default function DeleteTxButton({
         <input type="hidden" name="id" value={txId} />
         <FormButton
           className="btn btn-danger text-xs"
-          confirm="Hapus transaksi ini permanen? Bukti terlampir ikut terhapus."
+          confirm={
+            splitCount > 1
+              ? `Ini satu pembayaran yang dibagi ke ${splitCount} brand. ` +
+                `Seluruh ${splitCount} porsinya akan terhapus permanen, bukan hanya yang ini. ` +
+                `Bukti terlampir ikut terhapus. Lanjutkan?`
+              : "Hapus transaksi ini permanen? Bukti terlampir ikut terhapus."
+          }
         >
           Hapus
         </FormButton>

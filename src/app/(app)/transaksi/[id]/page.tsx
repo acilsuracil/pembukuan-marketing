@@ -15,6 +15,7 @@ import {
   listBrands,
   listCategories,
   pendingRequestFor,
+  splitMembers,
 } from "@/lib/queries";
 import { requireUser } from "@/lib/session";
 
@@ -31,7 +32,11 @@ export default async function DetailTransaksiPage({
   const t = getTransaction(Number(id));
   if (!t) notFound();
 
-  const bukti = attachmentsOf(t.id);
+  // Bukti transfer satu pembayaran melekat pada baris pertama grupnya, bukan
+  // pada masing-masing porsi. Dibaca dari pemegangnya supaya dua dari tiga porsi
+  // tidak tampil seolah tidak punya bukti sama sekali.
+  const bukti = attachmentsOf(t.split_head_id);
+  const siblings = t.split_group ? splitMembers(t.split_group) : [];
   const pending = pendingRequestFor(t.id);
   const locked = isLocked(t.date);
   const canEdit = hasPerm(user, "edit");
@@ -124,6 +129,11 @@ export default async function DetailTransaksiPage({
           <h1 className="text-xl font-semibold tracking-tight">
             Transaksi #{t.id}
           </h1>
+          {t.split_count > 1 && (
+            <Badge tone="muted">
+              ⧉ Porsi {t.split_index} dari {t.split_count}
+            </Badge>
+          )}
           {locked && <Badge tone="muted">🔒 Periode terkunci</Badge>}
           {pending && <Badge tone="serious">Menunggu keputusan admin</Badge>}
         </div>
@@ -147,6 +157,69 @@ export default async function DetailTransaksiPage({
           <Link href="/pengajuan" className="btn btn-ghost mt-3 text-xs">
             {hasPerm(user, "approveRequest") ? "Tinjau pengajuan" : "Lihat pengajuan"}
           </Link>
+        </section>
+      )}
+
+      {/* Satu porsi tidak bisa dibaca sendirian: nominalnya lebih kecil dari
+          pembayaran yang sebenarnya terjadi, dan bukti transfernya ada di baris
+          lain. Grupnya dibentangkan di sini supaya asal-usulnya kelihatan tanpa
+          harus menebak dari daftar. */}
+      {siblings.length > 1 && (
+        <section className="card p-4 sm:p-5">
+          <h2 className="text-sm font-semibold">
+            Bagian dari satu pembayaran yang dibagi
+          </h2>
+          <p className="mt-1 text-xs text-[var(--text-secondary)]">
+            Total pembayarannya{" "}
+            <strong className="tnum">
+              {fmtUsdt(siblings.reduce((n, s) => n + s.flow_usdt, 0))}
+            </strong>
+            , dipakai {siblings.length} brand. Tiap porsi tercatat sebagai
+            transaksi tersendiri supaya laporan per brand tetap benar.
+          </p>
+
+          <ul className="mt-3 divide-y divide-[var(--hairline)]">
+            {siblings.map((s, i) => {
+              const here = s.id === t.id;
+              return (
+                <li key={s.id} className="flex items-center gap-3 py-2 text-sm">
+                  <span className="w-8 shrink-0 text-xs text-[var(--text-muted)]">
+                    {i + 1}/{siblings.length}
+                  </span>
+                  <span className="inline-flex min-w-0 flex-1 items-center gap-1.5">
+                    <span
+                      aria-hidden
+                      className="h-2 w-2 shrink-0 rounded-[2px]"
+                      style={{ background: seriesVar(s.brand_slot) }}
+                    />
+                    <span className="truncate">{s.brand_name ?? "— tanpa brand —"}</span>
+                  </span>
+                  <span className="tnum shrink-0">{fmtUsdt(s.flow_usdt)}</span>
+                  <span className="w-24 shrink-0 text-right text-xs">
+                    {here ? (
+                      <span className="text-[var(--text-muted)]">porsi ini</span>
+                    ) : (
+                      <Link
+                        href={`/transaksi/${s.id}`}
+                        className="text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                      >
+                        #{s.id} →
+                      </Link>
+                    )}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+
+          <p className="mt-3 text-xs text-[var(--text-muted)]">
+            Bukti transfernya menempel di porsi pertama (#{t.split_head_id}) dan
+            ditampilkan di setiap porsi. <strong>Mengubah</strong> di sini hanya
+            mengenai porsi ini — kalau pembagiannya yang salah, hapus lalu catat
+            ulang. <strong>Menghapus</strong> membuang seluruh {siblings.length}{" "}
+            porsi sekaligus, karena menyisakan sebagian akan membuat pembukuannya
+            mencatat pembayaran yang lebih kecil dari kenyataan.
+          </p>
         </section>
       )}
 
@@ -177,7 +250,7 @@ export default async function DetailTransaksiPage({
       )}
 
       <BuktiPanel
-        txId={t.id}
+        txId={t.split_head_id}
         items={bukti}
         canUpload={!locked && hasPerm(user, "uploadBukti")}
         canDeleteAny={hasPerm(user, "deleteAnyBukti")}
@@ -211,7 +284,11 @@ export default async function DetailTransaksiPage({
                   ? "Ubah transaksi"
                   : "Ajukan perubahan"}
             </Link>
-            <DeleteTxButton txId={t.id} canDeleteDirectly={canDelete} />
+            <DeleteTxButton
+              txId={t.id}
+              canDeleteDirectly={canDelete}
+              splitCount={t.split_count}
+            />
           </>
         )}
       </section>
