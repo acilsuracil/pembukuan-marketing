@@ -352,7 +352,22 @@ export function openingBalance(month: string): number {
 export function runningBalance(
   months: number = 12,
 ): Array<{ month: string; balance: number }> {
-  const flows = monthlyFlows(months);
+  const to = currentMonth();
+  return runningBalanceBetween(addMonths(to, -(months - 1)), to);
+}
+
+/**
+ * Saldo akhir tiap bulan pada rentang tertentu.
+ *
+ * Dimulai dari saldo sebelum `from`, bukan dari nol — grafik saldo bulan-bulan
+ * lampau harus memperlihatkan uang yang memang sudah ada di dompet saat itu,
+ * bukan seolah pembukuannya baru dimulai di awal rentang.
+ */
+export function runningBalanceBetween(
+  from: string,
+  to: string,
+): Array<{ month: string; balance: number }> {
+  const flows = monthlyFlowsBetween(from, to);
   if (flows.length === 0) return [];
   let acc = openingBalance(flows[0].month);
   return flows.map((f) => {
