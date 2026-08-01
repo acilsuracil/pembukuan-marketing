@@ -19,6 +19,7 @@ import {
   listBrands,
   listTransactions,
   monthlyFlowsBetween,
+  monthsWithData,
   openingBalance,
   runningBalanceBetween,
   type TxFilter,
@@ -77,6 +78,7 @@ export default async function DashboardPage({
   const brandBudgets = monthly ? brandBudgetStatus(period.key) : [];
 
   const periodPick = periodOptions(firstMonth());
+  const filledMonths = monthsWithData();
 
   return (
     <div className="space-y-5">
@@ -92,6 +94,7 @@ export default async function DashboardPage({
           <PeriodScope
             months={periodPick.months}
             years={periodPick.years}
+            filled={filledMonths}
             value={period.key}
             brand={brandRaw}
           />

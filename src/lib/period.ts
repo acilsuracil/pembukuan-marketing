@@ -77,24 +77,50 @@ export function chartMonths(p: Period): { from: string; to: string } {
     : { from: addMonths(p.lastMonth, -11), to: p.lastMonth };
 }
 
-/** Pilihan yang ditawarkan pemilih periode, terbaru lebih dulu. */
+/** Jendela minimum yang selalu ditawarkan, walaupun belum ada datanya sama sekali. */
+const MIN_MONTHS = 12;
+const MIN_YEARS = 2;
+/** Batas atas daftar bulan; yang lebih tua tetap terjangkau lewat tampilan tahunan. */
+const MAX_MONTHS = 36;
+
+/**
+ * Pilihan yang ditawarkan pemilih periode, terbaru lebih dulu.
+ *
+ * Daftarnya **tidak** dipotong sebatas rentang data. Pembukuan yang baru
+ * berjalan dua bulan akan menghasilkan dropdown berisi dua pilihan — dan itu
+ * terbaca seperti pemilihnya rusak, bukan seperti datanya yang memang belum ada.
+ * Jadi selalu ada jendela minimum, dan periode yang belum ada isinya ditandai
+ * lewat `filled` supaya tidak perlu dibuka satu-satu untuk tahu itu kosong.
+ */
 export function periodOptions(earliest: string | null): {
   months: string[];
   years: string[];
 } {
   const now = currentMonth();
-  // Data yang lebih tua dari 3 tahun tetap bisa dibuka lewat tampilan tahunan,
-  // jadi daftar bulannya tidak perlu memanjang tanpa batas.
-  const floor = addMonths(now, -35);
-  const start = earliest && earliest > floor ? earliest : floor;
+  const floor = addMonths(now, -(MAX_MONTHS - 1));
+  const want = addMonths(now, -(MIN_MONTHS - 1));
+  // Mundur sampai data tertua, tapi tidak pernah kurang dari jendela minimum
+  // dan tidak pernah melewati batas atas.
+  let start = earliest && earliest < want ? earliest : want;
+  if (start < floor) start = floor;
   const months = monthRange(start > now ? now : start, now).reverse();
 
-  const firstYear = Number((earliest ?? now).slice(0, 4));
   const thisYear = Number(now.slice(0, 4));
+  const dataYear = Number((earliest ?? now).slice(0, 4));
+  const firstYear = Math.min(dataYear, thisYear - (MIN_YEARS - 1));
   const years: string[] = [];
-  for (let y = thisYear; y >= Math.min(firstYear, thisYear); y--) years.push(String(y));
+  for (let y = thisYear; y >= firstYear; y--) years.push(String(y));
 
   return { months, years };
+}
+
+/** Apakah periode ini punya transaksi? `filled` adalah daftar bulan yang ada isinya. */
+export function periodHasData(key: string, filled: Set<string>): boolean {
+  if (key.length === 4) {
+    for (const m of filled) if (m.startsWith(`${key}-`)) return true;
+    return false;
+  }
+  return filled.has(key);
 }
 
 /**

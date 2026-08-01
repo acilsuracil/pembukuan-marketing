@@ -703,6 +703,13 @@ export function incomeRates(): Array<{ date: string; rate: number }> {
   );
 }
 
+/** Bulan-bulan yang punya transaksi — untuk menandai periode kosong di pemilih. */
+export function monthsWithData(): string[] {
+  return all<{ month: string }>(
+    `SELECT DISTINCT month FROM tx_view ORDER BY month`,
+  ).map((r) => r.month);
+}
+
 export function firstMonth(): string | null {
   return (
     one<{ m: string | null }>(`SELECT MIN(month) AS m FROM tx_view`)?.m ?? null
