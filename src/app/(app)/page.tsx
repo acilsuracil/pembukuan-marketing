@@ -24,6 +24,7 @@ import {
   listBrands,
   listTransactions,
   monthlyFlows,
+  openingBalance,
   runningBalance,
   type TxFilter,
 } from "@/lib/queries";
@@ -57,8 +58,15 @@ export default async function DashboardPage({
   const spendByBrand = brandSpend({ from: `${month}-01`, to: `${month}-31` });
   const recent = listTransactions({ ...scope, limit: 8 });
 
+  // `monthlyFlows` mengisi bulan kosong, jadi elemen terakhirnya selalu bulan ini
+  // — bukan bulan terakhir yang kebetulan ada transaksinya.
   const monthFlow = flows[flows.length - 1];
   const net = monthFlow ? monthFlow.in_usdt - monthFlow.out_usdt : 0;
+
+  // Saldo awal bulan ini = saldo akhir bulan lalu. Saldo dompet adalah kolam
+  // bersama, jadi angkanya hanya punya arti saat tidak sedang disaring per brand.
+  const opening = scoped ? null : openingBalance(month);
+  const closing = opening === null ? null : opening + net;
   const budgets = scoped ? [] : budgetStatus(month);
   const brandBudgets = scoped ? [] : brandBudgetStatus(month);
 
@@ -131,13 +139,24 @@ export default async function DashboardPage({
           </div>
 
           <div className="grid gap-3 sm:grid-cols-3">
+            {/* Kartu-kartu ini sepanjang waktu, bukan bulan yang tertulis di
+                judul halaman. Periodenya ditulis di labelnya sendiri: tanpa itu,
+                "Agustus 2026" di atas membuat total seumur hidup terbaca sebagai
+                angka bulan ini, dan arus bersih yang negatif jadi tampak seperti
+                saldo yang minus. */}
             <StatTile
-              label={scoped ? `Masuk — ${scoped.name}` : "Total uang masuk"}
+              label={
+                scoped ? `Masuk — ${scoped.name}` : "Total uang masuk · sejak awal"
+              }
               value={fmtUsdt(s.inUsdt)}
               sub={`Modal ${fmtIdr(s.inIdr)}`}
             />
             <StatTile
-              label={scoped ? `Pemakaian — ${scoped.name}` : "Total uang keluar"}
+              label={
+                scoped
+                  ? `Pemakaian — ${scoped.name}`
+                  : "Total uang keluar · sejak awal"
+              }
               value={fmtUsdt(s.outUsdt)}
               sub={`Terpakai ${fmtIdr(s.outIdr)}`}
             />
@@ -153,6 +172,41 @@ export default async function DashboardPage({
               }
             />
           </div>
+
+          {/* Arus bersih adalah selisih masuk-keluar bulan ini, bukan saldo — dan
+              bulan yang belum ada top-up-nya pasti negatif sebesar seluruh
+              pengeluarannya. Tanpa saldo awal di sebelahnya, angka minus itu
+              terbaca seperti dompet yang kehabisan uang, padahal saldo akhir
+              bulan lalu memang terbawa. Rangkaiannya ditulis terbuka di sini
+              supaya asal-usulnya tidak perlu ditebak. */}
+          {opening !== null && closing !== null && (
+            <section className="card p-4">
+              <div className="text-xs text-[var(--text-secondary)]">
+                Perjalanan saldo {monthLabelLong(month)}
+              </div>
+              <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
+                <span className="text-[var(--text-muted)]">Saldo awal</span>
+                <strong className="tnum">{fmtUsdt(opening)}</strong>
+
+                <span className="text-[var(--text-muted)]">+ masuk</span>
+                <strong className="tnum" style={{ color: "var(--flow-in)" }}>
+                  {fmtUsdt(monthFlow?.in_usdt ?? 0)}
+                </strong>
+
+                <span className="text-[var(--text-muted)]">− keluar</span>
+                <strong className="tnum" style={{ color: "var(--flow-out)" }}>
+                  {fmtUsdt(monthFlow?.out_usdt ?? 0)}
+                </strong>
+
+                <span className="text-[var(--text-muted)]">=</span>
+                <strong className="tnum">Saldo akhir {fmtUsdt(closing)}</strong>
+              </div>
+              <p className="mt-1.5 text-xs text-[var(--text-muted)]">
+                Saldo awal {monthLabelLong(month)} adalah saldo akhir bulan
+                sebelumnya — uangnya terbawa, tidak dihitung ulang dari nol.
+              </p>
+            </section>
+          )}
 
           <CashflowChart data={flows} />
 

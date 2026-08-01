@@ -332,18 +332,29 @@ export function monthlyFlowsBetween(
   );
 }
 
+/**
+ * Saldo dompet tepat sebelum sebuah bulan dimulai — yaitu saldo akhir bulan
+ * sebelumnya, yang menjadi modal awal bulan itu.
+ *
+ * Selalu global, tidak pernah per brand: saldo dompet adalah satu kolam bersama,
+ * jadi "saldo awal brand X" bukan angka yang punya arti di pembukuan ini.
+ */
+export function openingBalance(month: string): number {
+  return (
+    one<{ v: number | null }>(
+      `SELECT SUM(delta_usdt) AS v FROM tx_view WHERE month < ?`,
+      month,
+    )?.v ?? 0
+  );
+}
+
 /** Saldo dompet di akhir tiap bulan — selalu global, bukan per brand. */
 export function runningBalance(
   months: number = 12,
 ): Array<{ month: string; balance: number }> {
   const flows = monthlyFlows(months);
   if (flows.length === 0) return [];
-  const opening =
-    one<{ v: number | null }>(
-      `SELECT SUM(delta_usdt) AS v FROM tx_view WHERE month < ?`,
-      flows[0].month,
-    )?.v ?? 0;
-  let acc = opening;
+  let acc = openingBalance(flows[0].month);
   return flows.map((f) => {
     acc += f.in_usdt - f.out_usdt;
     return { month: f.month, balance: acc };
