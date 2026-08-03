@@ -134,6 +134,8 @@ export interface TxFilter {
   noBrand?: boolean;
   q?: string;
   limit?: number;
+  /** Baris yang dilewati — hanya berlaku bersama `limit`. */
+  offset?: number;
   sort?: SortKey;
   dir?: SortDir;
 }
@@ -184,9 +186,16 @@ function orderClause(f: TxFilter) {
 
 export function listTransactions(f: TxFilter = {}): TxRow[] {
   const { sql, params } = whereClause(f);
+  // OFFSET hanya sah di SQLite kalau LIMIT ikut ditulis, jadi keduanya menempel
+  // pada syarat yang sama — offset tanpa limit dibiarkan tidak berpengaruh, bukan
+  // menghasilkan SQL yang gagal.
   return all<TxRow>(
     `SELECT * FROM tx_view ${sql} ${orderClause(f)}
-     ${f.limit ? `LIMIT ${Number(f.limit)}` : ""}`,
+     ${
+       f.limit
+         ? `LIMIT ${Number(f.limit)} OFFSET ${Math.max(0, Number(f.offset) || 0)}`
+         : ""
+     }`,
     ...params,
   );
 }

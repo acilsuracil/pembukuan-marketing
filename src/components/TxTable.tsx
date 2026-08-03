@@ -47,7 +47,7 @@ function SortTh({
   params: string;
   align?: "left" | "right";
 }) {
-  const cls = `px-4 py-2.5 font-medium ${align === "right" ? "text-right" : ""}`;
+  const cls = `px-2.5 py-2.5 font-medium ${align === "right" ? "text-right" : ""}`;
   if (!col) return <th className={cls}>{label}</th>;
 
   const active = sort === col;
@@ -114,7 +114,7 @@ export default function TxTable({
         Ditulis di sini sebagai varian, bukan disebar ke tiap `td`, supaya tidak ada
         sel yang kelewat dan garisnya patah di satu kolom.
       */}
-      <table className="w-full min-w-[900px] border-separate border-spacing-0 text-left text-sm [&_tbody_td]:border-b [&_tbody_td]:border-[var(--hairline)] [&_tbody_tr:last-child_td]:border-b-0 [&_thead_th]:border-b [&_thead_th]:border-[var(--hairline)]">
+      <table className="w-full min-w-[780px] border-separate border-spacing-0 text-left text-sm [&_tbody_td]:border-b [&_tbody_td]:border-[var(--hairline)] [&_tbody_tr:last-child_td]:border-b-0 [&_thead_th]:border-b [&_thead_th]:border-[var(--hairline)]">
         <thead className="text-xs text-[var(--text-muted)]">
           <tr>
             <SortTh label="Tanggal" col={sortable ? "date" : undefined} {...{ sort, dir, params }} />
@@ -126,13 +126,13 @@ export default function TxTable({
             <SortTh label="Kurs" align="right" {...{ sort, dir, params }} />
             <SortTh label="Rupiah" col={sortable ? "idr" : undefined} align="right" {...{ sort, dir, params }} />
             {/* Kolom Detail menempel di tepi kanan.
-                Tabelnya `min-w-[900px]` di dalam pembungkus yang menggulir
+                Tabelnya `min-w-[780px]` di dalam pembungkus yang menggulir
                 mendatar, jadi di layar yang lebih sempit kolom terakhir terdorong
                 ke luar pandangan — dan satu-satunya jalan ke halaman detail jadi
                 tersembunyi di balik gulir yang tidak ada penandanya. Latarnya
                 diberi warna sendiri karena sel yang menempel akan tembus
                 pandang terhadap isi kolom yang bergulir di bawahnya. */}
-            <th className="sticky right-0 z-10 bg-[var(--surface-1)] px-4 py-2.5" />
+            <th className="sticky right-0 z-10 bg-[var(--surface-1)] px-2.5 py-2.5" />
           </tr>
         </thead>
         <tbody>
@@ -141,11 +141,11 @@ export default function TxTable({
               key={t.id}
               className="group hover:bg-[var(--wash)]"
             >
-              <td className="tnum px-4 py-2.5 whitespace-nowrap">{fmtDate(t.date)}</td>
-              <td className="px-4 py-2.5">
+              <td className="tnum px-2.5 py-2.5 whitespace-nowrap">{fmtDate(t.date)}</td>
+              <td className="px-2.5 py-2.5">
                 <TypeBadge type={t.type} />
               </td>
-              <td className="px-4 py-2.5">
+              <td className="px-2.5 py-2.5">
                 {t.brand_name ? (
                   <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                     <Dot slot={t.brand_slot} />
@@ -155,7 +155,7 @@ export default function TxTable({
                   <span className="text-[var(--text-muted)]">—</span>
                 )}
               </td>
-              <td className="px-4 py-2.5">
+              <td className="px-2.5 py-2.5">
                 {t.category_name ? (
                   <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                     <Dot slot={t.color_slot} />
@@ -165,7 +165,7 @@ export default function TxTable({
                   <span className="text-[var(--text-muted)]">—</span>
                 )}
               </td>
-              <td className="max-w-[220px] px-4 py-2.5">
+              <td className="max-w-[190px] px-2.5 py-2.5">
                 <div className="truncate">
                   {t.description || <span className="text-[var(--text-muted)]">—</span>}
                 </div>
@@ -189,7 +189,7 @@ export default function TxTable({
                   )}
                 </div>
               </td>
-              <td className="tnum px-4 py-2.5 text-right whitespace-nowrap">
+              <td className="tnum px-2.5 py-2.5 text-right whitespace-nowrap">
                 {t.type === "in" ? "+" : "−"}
                 {fmtUsdt(t.flow_usdt).replace(" USDT", "")}
                 {/* Fee agency disebut dengan persentasenya — itu bentuk yang
@@ -206,7 +206,7 @@ export default function TxTable({
                   </div>
                 )}
               </td>
-              <td className="tnum px-4 py-2.5 text-right whitespace-nowrap">
+              <td className="tnum px-2.5 py-2.5 text-right whitespace-nowrap">
                 {fmtRate(t.eff_rate)}
                 <div className="text-[11px] text-[var(--text-muted)]">
                   {t.type === "in"
@@ -216,7 +216,7 @@ export default function TxTable({
                       : "override"}
                 </div>
               </td>
-              <td className="tnum px-4 py-2.5 text-right whitespace-nowrap">
+              <td className="tnum px-2.5 py-2.5 text-right whitespace-nowrap">
                 {t.eff_rate === null ? "–" : fmtIdr(t.flow_usdt * t.eff_rate)}
               </td>
               {/*
@@ -232,10 +232,10 @@ export default function TxTable({
                 kebal terhadap `hover:bg` di elemen `tr`, dan tanpa penyesuaian ini
                 barisnya menyala sementara kolom terakhirnya tetap pucat.
               */}
-              <td className="sticky right-0 z-10 border-l border-[var(--hairline)] bg-[var(--surface-1)] px-4 py-2.5 text-right whitespace-nowrap group-hover:bg-[linear-gradient(var(--wash),var(--wash))]">
+              <td className="sticky right-0 z-10 border-l border-[var(--hairline)] bg-[var(--surface-1)] px-2.5 py-2.5 text-right whitespace-nowrap group-hover:bg-[linear-gradient(var(--wash),var(--wash))]">
                 <Link
                   href={`/transaksi/${t.id}`}
-                  className="btn btn-ghost px-2 py-1 text-xs"
+                  className="btn btn-ghost px-1.5 py-0.5 text-[11px]"
                 >
                   Detail
                 </Link>
