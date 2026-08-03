@@ -56,6 +56,15 @@ export default function BrandSplit({
   const [share, setShare] = useState<Record<number, string>>({});
   /** Kolom persen ditulis terpisah supaya "33,33" tidak dibulatkan saat diketik. */
   const [pct, setPct] = useState<Record<number, string>>({});
+  /**
+   * Sudah ada porsi yang diketik tangan?
+   *
+   * Selagi masih `false`, porsinya dibagi rata dan mengikuti nominal secara
+   * langsung. Begitu satu kolom diketik, nominal berhenti menimpa susunannya —
+   * pembagian yang sudah disusun orang tidak boleh hilang hanya karena
+   * nominalnya dikoreksi sedikit.
+   */
+  const [manual, setManual] = useState(false);
   /** Daftar brand disembunyikan sampai diminta — 17 brand yang terbentang terus memakan layar. */
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
@@ -69,9 +78,63 @@ export default function BrandSplit({
    */
   const selectable = useMemo(() => brands.filter((b) => !b.archived), [brands]);
 
+  /**
+   * Pembagian rata adalah nilai **turunan**, bukan nilai tersimpan.
+   *
+   * Sebelumnya porsi rata dituliskan sekali ke state saat brand dicentang. Begitu
+   * nominalnya diubah, angkanya tertinggal di pembagian nominal yang lama —
+   * 17 × 14,882353 masih menjumlah 253 padahal nominalnya sudah 352 — dan
+   * satu-satunya jalan keluar adalah menekan "Bagi rata" lagi.
+   *
+   * Dihitung ulang setiap render, jadi porsinya mengikuti nominal secara langsung
+   * sambil diketik. State `share`/`pct` baru dipakai begitu ada yang diketik
+   * tangan, dan sejak itu nominal tidak lagi menimpa susunannya.
+   */
+  const even = useMemo(
+    () =>
+      amount > 0 && chosen.length > 0
+        ? evenShares(amount, chosen.length)
+        : chosen.map(() => 0),
+    [amount, chosen],
+  );
+
+  /**
+   * Hasil bagi rata dikunci ke id brand, bukan ke nomor urut.
+   *
+   * `even` terurut mengikuti urutan pencentangan, sedangkan baris porsi terurut
+   * mengikuti daftar brand. Mengindeks keduanya dengan nomor urut yang sama
+   * berarti angka bisa mendarat di brand yang salah — pada pembagian rata
+   * selisihnya cuma sepersejuta sehingga tidak akan terlihat, tapi begitu
+   * angkanya dipindah ke state untuk diketik, yang tersimpan sudah tertukar.
+   */
+  const evenBy = useMemo(() => {
+    const m = new Map<number, number>();
+    chosen.forEach((id, i) => m.set(id, even[i] ?? 0));
+    return m;
+  }, [chosen, even]);
+
+  const asPct = (usdt: number) =>
+    amount > 0 && usdt !== 0
+      ? String(Math.round(sharePct(usdt, amount) * 100) / 100)
+      : "";
+
+  /** Isi kolom yang tampil: hasil ketikan kalau sudah manual, kalau belum hasil bagi rata. */
+  const shareText = (id: number) => {
+    if (manual) return share[id] ?? "";
+    const v = evenBy.get(id) ?? 0;
+    return v > 0 ? String(v) : "";
+  };
+  const pctText = (id: number) =>
+    manual ? (pct[id] ?? "") : asPct(evenBy.get(id) ?? 0);
+
   const shares = useMemo(
-    () => chosen.map((id) => Number((share[id] ?? "").replace(",", ".")) || 0),
-    [chosen, share],
+    () =>
+      chosen.map((id) =>
+        manual
+          ? Number((share[id] ?? "").replace(",", ".")) || 0
+          : (evenBy.get(id) ?? 0),
+      ),
+    [chosen, share, manual, evenBy],
   );
   const total = useMemo(() => shares.reduce((a, b) => a + b, 0), [shares]);
   const diff = fromMicro(toMicro(amount) - toMicro(total));
@@ -100,34 +163,52 @@ export default function BrandSplit({
   const totalPct = sharePct(total, amount);
   const lebih = amount > 0 && toMicro(total) > toMicro(amount);
 
-  /** Menulis ulang kedua kolom sekaligus, supaya nominal dan persen tidak pernah berselisih. */
-  function put(id: number, usdt: number) {
-    setShare((s) => ({ ...s, [id]: usdt === 0 ? "" : String(usdt) }));
-    setPct((p) => ({
-      ...p,
-      [id]:
-        amount > 0 && usdt !== 0
-          ? String(Math.round(sharePct(usdt, amount) * 100) / 100)
-          : "",
-    }));
+  /**
+   * Angka rata yang sedang tampil dipindahkan ke state sebelum ketikan pertama
+   * diterapkan. Tanpa ini, mengetik satu kolom akan mengosongkan semua kolom lain
+   * — karena `share` masih kosong dan tampilannya berhenti memakai nilai rata.
+   */
+  function seed(): { s: Record<number, string>; p: Record<number, string> } {
+    if (manual) return { s: { ...share }, p: { ...pct } };
+    const s: Record<number, string> = {};
+    const p: Record<number, string> = {};
+    for (const id of chosen) {
+      const v = evenBy.get(id) ?? 0;
+      s[id] = v > 0 ? String(v) : "";
+      p[id] = asPct(v);
+    }
+    return { s, p };
   }
 
-  function spreadEvenly(ids: number[] = chosen) {
-    if (ids.length === 0 || !(amount > 0)) return;
-    const even = evenShares(amount, ids.length);
-    ids.forEach((id, i) => put(id, even[i]));
+  function editShare(id: number, v: string) {
+    const { s, p } = seed();
+    const n = Number(v.replace(",", ".")) || 0;
+    setShare({ ...s, [id]: v });
+    setPct({ ...p, [id]: asPct(n) });
+    setManual(true);
+  }
+
+  function editPct(id: number, v: string) {
+    const { s, p } = seed();
+    const usdt = pctToShare(Number(v.replace(",", ".")) || 0, amount);
+    setPct({ ...p, [id]: v });
+    setShare({ ...s, [id]: usdt === 0 ? "" : String(usdt) });
+    setManual(true);
+  }
+
+  /** Kembali ke pembagian rata yang mengikuti nominal. */
+  function backToEven() {
+    setManual(false);
+    setShare({});
+    setPct({});
   }
 
   function replaceChosen(next: number[]) {
     setChosen(next);
-    // Begitu brand kedua masuk, porsi langsung terisi rata — itu tebakan yang
-    // paling sering benar, dan kalau salah cuma perlu ditimpa. Membiarkannya
-    // kosong berarti setiap pembagian dimulai dari formulir yang belum sah.
-    if (next.length > 1) spreadEvenly(next);
-    else {
-      setShare({});
-      setPct({});
-    }
+    // Turun ke satu brand berarti tidak ada porsi lagi yang perlu diatur, jadi
+    // susunan manualnya dibuang — kalau tidak, angka lama itu akan muncul kembali
+    // begitu brand kedua dicentang lagi.
+    if (next.length <= 1) backToEven();
   }
 
   function toggle(id: number) {
@@ -136,32 +217,11 @@ export default function BrandSplit({
     );
   }
 
-  /**
-   * Nominal yang baru diisi belakangan tetap membagi porsinya sendiri.
-   *
-   * Brand sering dicentang sebelum nominalnya diketik. Tanpa ini, porsinya
-   * terkunci di 0,00 dengan peringatan merah, dan satu-satunya jalan keluar
-   * adalah menekan "Bagi rata" — yang tidak ada apa pun menyuruh melakukannya.
-   *
-   * Hanya berjalan selagi belum ada angka yang diketik sama sekali, jadi
-   * pembagian yang sudah disusun tangan tidak pernah ditimpa saat nominalnya
-   * dikoreksi.
-   */
-  const lastAuto = useRef("");
-  useEffect(() => {
-    const stamp = `${chosen.join(",")}|${amount}`;
-    if (!multi || !(amount > 0) || total > 0 || lastAuto.current === stamp) return;
-    lastAuto.current = stamp;
-    spreadEvenly();
-    // spreadEvenly sengaja tidak masuk daftar dependensi: fungsinya dibuat ulang
-    // setiap render, dan memasukkannya membuat efek ini berjalan tanpa henti.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [amount, multi, total, chosen]);
-
   /** Sisa yang belum terbagi dilimpahkan ke satu brand — jalan keluar tercepat dari persen yang tidak genap. */
   function absorb(id: number) {
-    const now = Number((share[id] ?? "").replace(",", ".")) || 0;
-    put(id, fromMicro(toMicro(now) + toMicro(diff)));
+    const i = chosen.indexOf(id);
+    const now = shares[i] ?? 0;
+    editShare(id, String(fromMicro(toMicro(now) + toMicro(diff))));
   }
 
   const allOn = selectable.length > 0 && chosen.length === selectable.length;
@@ -318,12 +378,17 @@ export default function BrandSplit({
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <span className="text-xs font-medium text-[var(--text-secondary)]">
               Porsi {chosen.length} brand
+              <span className="ml-1.5 font-normal text-[var(--text-muted)]">
+                {manual
+                  ? "· diatur manual"
+                  : "· dibagi rata, ikut berubah saat nominal diubah"}
+              </span>
             </span>
             <div className="flex flex-wrap items-center gap-1">
               <button
                 type="button"
-                onClick={() => spreadEvenly()}
-                disabled={!(amount > 0)}
+                onClick={backToEven}
+                disabled={!manual}
                 className="btn btn-ghost text-[11px]"
               >
                 Bagi rata
@@ -380,19 +445,8 @@ export default function BrandSplit({
                   aria-label={`Porsi ${b.name} dalam USDT`}
                   placeholder="0.00"
                   className="field tnum py-1 text-xs"
-                  value={share[b.id] ?? ""}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setShare((s) => ({ ...s, [b.id]: v }));
-                    const n = Number(v.replace(",", ".")) || 0;
-                    setPct((p) => ({
-                      ...p,
-                      [b.id]:
-                        amount > 0 && n !== 0
-                          ? String(Math.round(sharePct(n, amount) * 100) / 100)
-                          : "",
-                    }));
-                  }}
+                  value={shareText(b.id)}
+                  onChange={(e) => editShare(b.id, e.target.value)}
                 />
                 <div className="flex items-center gap-1">
                   <input
@@ -405,17 +459,8 @@ export default function BrandSplit({
                     aria-label={`Porsi ${b.name} dalam persen dari nominal`}
                     placeholder="0"
                     className="field tnum py-1 text-xs"
-                    value={pct[b.id] ?? ""}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setPct((p) => ({ ...p, [b.id]: v }));
-                      const n = Number(v.replace(",", ".")) || 0;
-                      const usdt = pctToShare(n, amount);
-                      setShare((s) => ({
-                        ...s,
-                        [b.id]: usdt === 0 ? "" : String(usdt),
-                      }));
-                    }}
+                    value={pctText(b.id)}
+                    onChange={(e) => editPct(b.id, e.target.value)}
                   />
                   <span className="shrink-0 text-[10px] text-[var(--text-muted)]">
                     %
