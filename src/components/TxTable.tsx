@@ -110,14 +110,21 @@ export default function TxTable({
             <SortTh label="USDT" col={sortable ? "amount" : undefined} align="right" {...{ sort, dir, params }} />
             <SortTh label="Kurs" align="right" {...{ sort, dir, params }} />
             <SortTh label="Rupiah" col={sortable ? "idr" : undefined} align="right" {...{ sort, dir, params }} />
-            <th className="px-4 py-2.5" />
+            {/* Kolom Detail menempel di tepi kanan.
+                Tabelnya `min-w-[900px]` di dalam pembungkus yang menggulir
+                mendatar, jadi di layar yang lebih sempit kolom terakhir terdorong
+                ke luar pandangan — dan satu-satunya jalan ke halaman detail jadi
+                tersembunyi di balik gulir yang tidak ada penandanya. Latarnya
+                diberi warna sendiri karena sel yang menempel akan tembus
+                pandang terhadap isi kolom yang bergulir di bawahnya. */}
+            <th className="sticky right-0 z-10 bg-[var(--surface-1)] px-4 py-2.5" />
           </tr>
         </thead>
         <tbody>
           {rows.map((t) => (
             <tr
               key={t.id}
-              className="border-b border-[var(--hairline)] last:border-0 hover:bg-[var(--wash)]"
+              className="group border-b border-[var(--hairline)] last:border-0 hover:bg-[var(--wash)]"
             >
               <td className="tnum px-4 py-2.5 whitespace-nowrap">{fmtDate(t.date)}</td>
               <td className="px-4 py-2.5">
@@ -197,7 +204,11 @@ export default function TxTable({
               <td className="tnum px-4 py-2.5 text-right whitespace-nowrap">
                 {t.eff_rate === null ? "–" : fmtIdr(t.flow_usdt * t.eff_rate)}
               </td>
-              <td className="px-4 py-2.5 text-right whitespace-nowrap">
+              {/* `group-hover` dipakai supaya sel yang menempel ikut berubah
+                  warna bersama barisnya. Latar solid membuatnya kebal terhadap
+                  `hover:bg` di elemen `tr`, jadi tanpa ini barisnya menyala
+                  tapi kolom terakhirnya tetap pucat. */}
+              <td className="sticky right-0 z-10 border-l border-[var(--hairline)] bg-[var(--surface-1)] px-4 py-2.5 text-right whitespace-nowrap group-hover:bg-[var(--wash)]">
                 <Link
                   href={`/transaksi/${t.id}`}
                   className="btn btn-ghost px-2 py-1 text-xs"
