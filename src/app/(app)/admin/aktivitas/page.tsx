@@ -1,6 +1,7 @@
 import Form from "next/form";
 import Link from "next/link";
 import { connection } from "next/server";
+import DateField from "@/components/DateField";
 import { Badge } from "@/components/ui";
 import {
   activityActions,
@@ -104,25 +105,13 @@ export default async function AdminAktivitasPage({
             <label className="label" htmlFor="f-from">
               Dari tanggal
             </label>
-            <input
-              id="f-from"
-              name="from"
-              type="date"
-              defaultValue={from}
-              className="field tnum"
-            />
+            <DateField id="f-from" name="from" defaultValue={from} />
           </div>
           <div>
             <label className="label" htmlFor="f-to">
               Sampai tanggal
             </label>
-            <input
-              id="f-to"
-              name="to"
-              type="date"
-              defaultValue={to}
-              className="field tnum"
-            />
+            <DateField id="f-to" name="to" defaultValue={to} />
           </div>
           <div>
             <label className="label" htmlFor="f-n">

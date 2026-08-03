@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { addMonths, currentMonth } from "@/lib/format";
+import DateField from "./DateField";
 
 export default function PeriodPicker({
   from,
@@ -62,10 +63,9 @@ export default function PeriodPicker({
           <label className="label" htmlFor="p-from">
             Dari bulan
           </label>
-          <input
+          <DateField
             id="p-from"
-            type="month"
-            className="field py-1.5 text-xs"
+            kind="month"
             value={from}
             min={min}
             max={max}
@@ -76,10 +76,9 @@ export default function PeriodPicker({
           <label className="label" htmlFor="p-to">
             Sampai bulan
           </label>
-          <input
+          <DateField
             id="p-to"
-            type="month"
-            className="field py-1.5 text-xs"
+            kind="month"
             value={to}
             min={min}
             max={max}

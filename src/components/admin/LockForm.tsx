@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { setLock, type ActionState } from "@/app/actions";
+import DateField from "@/components/DateField";
 import { Alert, FormButton } from "@/components/ui";
 
 const EMPTY: ActionState = { ok: false };
@@ -17,11 +18,10 @@ export default function LockForm({ current }: { current: string | null }) {
         <label className="label" htmlFor="lock_until">
           Kunci transaksi sampai tanggal
         </label>
-        <input
+        <DateField
           id="lock_until"
           name="lock_until"
-          type="date"
-          className="field tnum sm:max-w-[200px]"
+          width="w-full sm:w-[200px]"
           value={value}
           onChange={(e) => setValue(e.target.value)}
         />

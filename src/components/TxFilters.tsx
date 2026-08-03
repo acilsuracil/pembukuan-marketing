@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { addMonths, currentMonth, todayISO } from "@/lib/format";
 import type { Brand, Category } from "@/lib/types";
+import DateField from "./DateField";
 
 function shift(days: number): string {
   const d = new Date();
@@ -63,10 +64,8 @@ export default function TxFilters({
           <label className="label" htmlFor="f-from">
             Dari tanggal
           </label>
-          <input
+          <DateField
             id="f-from"
-            type="date"
-            className="field tnum w-[152px] py-1.5 text-xs"
             value={from}
             max={to || undefined}
             onChange={(e) => apply({ from: e.target.value })}
@@ -76,10 +75,8 @@ export default function TxFilters({
           <label className="label" htmlFor="f-to">
             Sampai tanggal
           </label>
-          <input
+          <DateField
             id="f-to"
-            type="date"
-            className="field tnum w-[152px] py-1.5 text-xs"
             value={to}
             min={from || undefined}
             onChange={(e) => apply({ to: e.target.value })}

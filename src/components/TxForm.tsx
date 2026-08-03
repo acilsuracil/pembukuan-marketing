@@ -13,6 +13,7 @@ import { fmtIdr, fmtRate, fmtUsdt, todayISO } from "@/lib/format";
 import type { Brand, Category, TxRow } from "@/lib/types";
 import BrandSplit from "./BrandSplit";
 import BuktiInput from "./BuktiInput";
+import DateField from "./DateField";
 import { blurOnWheel } from "./ui";
 
 const EMPTY: ActionState = { ok: false };
@@ -182,12 +183,11 @@ export default function TxForm({
           <label className="label" htmlFor="date">
             Tanggal
           </label>
-          <input
+          <DateField
             id="date"
             name="date"
-            type="date"
             required
-            className="field"
+            width="w-full"
             value={date}
             onChange={(e) => setDate(e.target.value)}
           />
