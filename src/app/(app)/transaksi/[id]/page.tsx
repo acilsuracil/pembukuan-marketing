@@ -5,7 +5,7 @@ import BuktiPanel from "@/components/Bukti";
 import DeleteTxButton from "@/components/DeleteTxButton";
 import TxForm from "@/components/TxForm";
 import { Badge } from "@/components/ui";
-import { fmtDate, fmtIdr, fmtRate, fmtUsdt } from "@/lib/format";
+import { fmtDate, fmtIdr, fmtRate, fmtUsdt, fmtUsdtExact } from "@/lib/format";
 import { seriesVar } from "@/lib/palette";
 import { hasPerm, isLocked } from "@/lib/policy";
 import {
@@ -66,12 +66,12 @@ export default async function DetailTransaksiPage({
       ),
     ],
     ["Kategori", t.category_name ?? "—"],
-    ["Nominal", fmtUsdt(t.amount_usdt)],
+    ["Nominal", fmtUsdtExact(t.amount_usdt)],
     [
       "Fee agency",
       t.fee_pct > 0 ? (
         <>
-          {fmtUsdt(t.fee_pct_usdt)}{" "}
+          {fmtUsdtExact(t.fee_pct_usdt)}{" "}
           <span className="text-xs text-[var(--text-muted)]">
             ({t.fee_pct}% dari nominal)
           </span>
@@ -80,10 +80,10 @@ export default async function DetailTransaksiPage({
         "—"
       ),
     ],
-    ["Biaya jaringan", t.fee_usdt > 0 ? fmtUsdt(t.fee_usdt) : "—"],
+    ["Biaya jaringan", t.fee_usdt > 0 ? fmtUsdtExact(t.fee_usdt) : "—"],
     [
       "Arus kas",
-      `${t.type === "in" ? "+" : "−"}${fmtUsdt(t.flow_usdt)}`,
+      `${t.type === "in" ? "+" : "−"}${fmtUsdtExact(t.flow_usdt)}`,
     ],
     [
       "Kurs dipakai",

@@ -8,7 +8,7 @@ import TxTable from "@/components/TxTable";
 import BalanceChart from "@/components/charts/BalanceChart";
 import CashflowChart from "@/components/charts/CashflowChart";
 import CategoryBars from "@/components/charts/CategoryBars";
-import { fmtDate, fmtIdr, fmtRate, fmtUsdt } from "@/lib/format";
+import { fmtDate, fmtIdr, fmtRate, fmtUsdt, fmtUsdtExact } from "@/lib/format";
 import {
   brandBudgetStatus,
   brandSpend,
@@ -134,10 +134,15 @@ export default async function DashboardPage({
                 hero
                 label="Saldo dompet (seluruh brand)"
                 value={fmtUsdt(s.balanceUsdt)}
+                // Angka utuhnya ikut ditulis. Nilai yang dibulatkan 2 desimal
+                // tidak bisa dicocokkan dengan saldo dompet sungguhan yang
+                // berbunyi 6 desimal — dan saat ada selisih, itu justru
+                // pemeriksaan pertama yang dibutuhkan.
                 sub={
-                  s.balanceIdr === null
-                    ? "Belum ada kurs pemasukan"
-                    : `≈ ${fmtIdr(s.balanceIdr)} pada kurs pemasukan terakhir`
+                  `Tepatnya ${fmtUsdtExact(s.balanceUsdt)}` +
+                  (s.balanceIdr === null
+                    ? " · belum ada kurs pemasukan"
+                    : ` · ≈ ${fmtIdr(s.balanceIdr)} pada kurs terakhir`)
                 }
               />
             </div>
