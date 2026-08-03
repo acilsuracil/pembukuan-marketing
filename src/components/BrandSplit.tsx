@@ -56,6 +56,9 @@ export default function BrandSplit({
   const [share, setShare] = useState<Record<number, string>>({});
   /** Kolom persen ditulis terpisah supaya "33,33" tidak dibulatkan saat diketik. */
   const [pct, setPct] = useState<Record<number, string>>({});
+  /** Daftar brand disembunyikan sampai diminta — 17 brand yang terbentang terus memakan layar. */
+  const [open, setOpen] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
 
   const multi = chosen.length > 1;
 
@@ -166,76 +169,148 @@ export default function BrandSplit({
   /** Baris porsi mengikuti urutan daftar, bukan urutan pencentangan — supaya tidak berpindah-pindah. */
   const chosenBrands = brands.filter((b) => chosen.includes(b.id));
 
+  /** Ringkasan di tombol: nama-namanya, dipangkas kalau kebanyakan. */
+  const SHOWN = 3;
+  const summary =
+    chosen.length === 0
+      ? required
+        ? "— Pilih brand —"
+        : "— Tanpa brand —"
+      : chosenBrands
+          .slice(0, SHOWN)
+          .map((b) => b.name)
+          .join(", ") +
+        (chosen.length > SHOWN ? ` +${chosen.length - SHOWN} lagi` : "");
+
+  // Ditutup saat mengklik di luar atau menekan Esc. Tanpa ini panelnya menutupi
+  // kolom-kolom di bawahnya dan tidak ada cara jelas untuk membereskannya.
+  useEffect(() => {
+    if (!open) return;
+    function onDown(e: MouseEvent) {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
   return (
     <div>
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <span className="label">
-          Brand{" "}
-          {required ? (
-            <span className="text-[var(--status-critical)]">*</span>
-          ) : (
-            <span className="font-normal text-[var(--text-muted)]">— opsional</span>
-          )}
-          <span className="font-normal text-[var(--text-muted)]">
-            {" "}
-            · bisa pilih lebih dari satu
-            {chosen.length > 0 && ` · ${chosen.length} dipilih`}
-          </span>
+      <span className="label">
+        Brand{" "}
+        {required ? (
+          <span className="text-[var(--status-critical)]">*</span>
+        ) : (
+          <span className="font-normal text-[var(--text-muted)]">— opsional</span>
+        )}
+        <span className="font-normal text-[var(--text-muted)]">
+          {" "}
+          · bisa pilih lebih dari satu
+          {chosen.length > 0 && ` · ${chosen.length} dipilih`}
         </span>
+      </span>
 
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => replaceChosen(allOn ? [] : selectable.map((b) => b.id))}
-            disabled={selectable.length === 0}
-            className="btn btn-ghost text-[11px]"
+      <div ref={boxRef} className="relative mt-1">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          className="field flex items-center justify-between gap-2 text-left"
+        >
+          <span
+            className="truncate"
+            style={chosen.length === 0 ? { color: "var(--text-muted)" } : undefined}
           >
-            {allOn ? "Kosongkan semua" : `Pilih semua (${selectable.length})`}
-          </button>
-          {chosen.length > 0 && !allOn && (
+            {summary}
+          </span>
+          <span aria-hidden className="shrink-0 text-[10px] text-[var(--text-muted)]">
+            ▾
+          </span>
+        </button>
+
+        {/*
+          Panelnya disembunyikan lewat `hidden`, bukan dilepas dari DOM.
+          Checkbox inilah yang menyusun `brand_id` di FormData; melepasnya saat
+          panel tertutup berarti formulir terkirim tanpa brand sama sekali —
+          padahal di layar pilihannya masih tertulis. Input ber-`display:none`
+          tetap ikut terkirim, jadi menyembunyikannya aman.
+        */}
+        <div
+          role="group"
+          aria-label="Pilih brand"
+          className={
+            open
+              ? "absolute left-0 right-0 z-20 mt-1 rounded-lg border border-[var(--hairline)] bg-[var(--surface-1)] p-2 shadow-lg"
+              : "hidden"
+          }
+        >
+          <div className="mb-1.5 flex items-center justify-between gap-2 border-b border-[var(--hairline)] pb-1.5">
             <button
               type="button"
-              onClick={() => replaceChosen([])}
+              onClick={() => replaceChosen(allOn ? [] : selectable.map((b) => b.id))}
+              disabled={selectable.length === 0}
               className="btn btn-ghost text-[11px]"
             >
-              Kosongkan
+              {allOn ? "Kosongkan semua" : `Pilih semua (${selectable.length})`}
             </button>
+            <div className="flex items-center gap-1">
+              {chosen.length > 0 && !allOn && (
+                <button
+                  type="button"
+                  onClick={() => replaceChosen([])}
+                  className="btn btn-ghost text-[11px]"
+                >
+                  Kosongkan
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="btn btn-ghost text-[11px]"
+              >
+                Selesai
+              </button>
+            </div>
+          </div>
+
+          {brands.length === 0 ? (
+            <p className="px-1 py-2 text-xs text-[var(--text-muted)]">
+              Belum ada brand. Tambahkan dulu di halaman Brand.
+            </p>
+          ) : (
+            <div className="grid max-h-72 grid-cols-2 gap-x-4 gap-y-0.5 overflow-y-auto sm:grid-cols-3 lg:grid-cols-4">
+              {brands.map((b) => (
+                <label
+                  key={b.id}
+                  className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm hover:bg-[var(--wash)]"
+                >
+                  <input
+                    type="checkbox"
+                    name="brand_id"
+                    value={b.id}
+                    checked={chosen.includes(b.id)}
+                    onChange={() => toggle(b.id)}
+                    className="h-4 w-4 shrink-0 accent-[var(--series-1)]"
+                  />
+                  <span
+                    aria-hidden
+                    className="h-2 w-2 shrink-0 rounded-[2px]"
+                    style={{ background: seriesVar(b.color_slot) }}
+                  />
+                  <span className="truncate" title={b.name}>
+                    {b.name}
+                  </span>
+                </label>
+              ))}
+            </div>
           )}
         </div>
-      </div>
-
-      <div className="mt-1 rounded-lg border border-[var(--hairline)] p-2">
-        {brands.length === 0 ? (
-          <p className="px-1 py-2 text-xs text-[var(--text-muted)]">
-            Belum ada brand. Tambahkan dulu di halaman Brand.
-          </p>
-        ) : (
-          <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 sm:grid-cols-3 lg:grid-cols-4">
-            {brands.map((b) => (
-              <label
-                key={b.id}
-                className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm hover:bg-[var(--wash)]"
-              >
-                <input
-                  type="checkbox"
-                  name="brand_id"
-                  value={b.id}
-                  checked={chosen.includes(b.id)}
-                  onChange={() => toggle(b.id)}
-                  className="h-4 w-4 shrink-0 accent-[var(--series-1)]"
-                />
-                <span
-                  aria-hidden
-                  className="h-2 w-2 shrink-0 rounded-[2px]"
-                  style={{ background: seriesVar(b.color_slot) }}
-                />
-                <span className="truncate" title={b.name}>
-                  {b.name}
-                </span>
-              </label>
-            ))}
-          </div>
-        )}
       </div>
 
       {multi && (
