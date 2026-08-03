@@ -99,9 +99,24 @@ export default function TxTable({
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[900px] text-left text-sm">
+      {/*
+        `border-separate` bukan pilihan gaya, tapi keharusan.
+
+        Preflight Tailwind memasang `border-collapse: collapse` pada semua tabel,
+        dan dalam mode itu latar sel **tidak digambar oleh selnya sendiri** —
+        digambar oleh baris/tabelnya. Akibatnya sel `sticky` di kolom Detail tampil
+        tanpa latar sama sekali: tombolnya mengapung, dan angka Rupiah yang bergulir
+        di bawahnya menembus keluar. Dengan `border-separate`, latar sel digambar
+        oleh selnya sendiri sehingga sel yang menempel benar-benar menutup.
+
+        Konsekuensinya garis pemisah baris harus pindah dari `tr` ke selnya:
+        border pada `tr` sepenuhnya diabaikan saat `border-collapse: separate`.
+        Ditulis di sini sebagai varian, bukan disebar ke tiap `td`, supaya tidak ada
+        sel yang kelewat dan garisnya patah di satu kolom.
+      */}
+      <table className="w-full min-w-[900px] border-separate border-spacing-0 text-left text-sm [&_tbody_td]:border-b [&_tbody_td]:border-[var(--hairline)] [&_tbody_tr:last-child_td]:border-b-0 [&_thead_th]:border-b [&_thead_th]:border-[var(--hairline)]">
         <thead className="text-xs text-[var(--text-muted)]">
-          <tr className="border-b border-[var(--hairline)]">
+          <tr>
             <SortTh label="Tanggal" col={sortable ? "date" : undefined} {...{ sort, dir, params }} />
             <SortTh label="Jenis" col={sortable ? "type" : undefined} {...{ sort, dir, params }} />
             <SortTh label="Brand" col={sortable ? "brand" : undefined} {...{ sort, dir, params }} />
@@ -124,7 +139,7 @@ export default function TxTable({
           {rows.map((t) => (
             <tr
               key={t.id}
-              className="group border-b border-[var(--hairline)] last:border-0 hover:bg-[var(--wash)]"
+              className="group hover:bg-[var(--wash)]"
             >
               <td className="tnum px-4 py-2.5 whitespace-nowrap">{fmtDate(t.date)}</td>
               <td className="px-4 py-2.5">
@@ -204,11 +219,20 @@ export default function TxTable({
               <td className="tnum px-4 py-2.5 text-right whitespace-nowrap">
                 {t.eff_rate === null ? "–" : fmtIdr(t.flow_usdt * t.eff_rate)}
               </td>
-              {/* `group-hover` dipakai supaya sel yang menempel ikut berubah
-                  warna bersama barisnya. Latar solid membuatnya kebal terhadap
-                  `hover:bg` di elemen `tr`, jadi tanpa ini barisnya menyala
-                  tapi kolom terakhirnya tetap pucat. */}
-              <td className="sticky right-0 z-10 border-l border-[var(--hairline)] bg-[var(--surface-1)] px-4 py-2.5 text-right whitespace-nowrap group-hover:bg-[var(--wash)]">
+              {/*
+                Sel ini wajib tetap buram. `--wash` bernilai rgba beralfa 0,04 —
+                memakainya sebagai warna latar saat disentuh kursor akan membuat
+                selnya nyaris tembus pandang, dan angka Rupiah di kolom sebelumnya
+                muncul kembali dari bawah tombolnya.
+
+                Jadi `background-color` dipertahankan solid, dan wash-nya ditumpuk
+                sebagai `background-image` — dua properti berbeda, sehingga
+                hasilnya warna barisnya ikut berubah tanpa pernah kehilangan
+                kebruaman. Warnanya harus ikut berubah: latar solid membuat sel ini
+                kebal terhadap `hover:bg` di elemen `tr`, dan tanpa penyesuaian ini
+                barisnya menyala sementara kolom terakhirnya tetap pucat.
+              */}
+              <td className="sticky right-0 z-10 border-l border-[var(--hairline)] bg-[var(--surface-1)] px-4 py-2.5 text-right whitespace-nowrap group-hover:bg-[linear-gradient(var(--wash),var(--wash))]">
                 <Link
                   href={`/transaksi/${t.id}`}
                   className="btn btn-ghost px-2 py-1 text-xs"
