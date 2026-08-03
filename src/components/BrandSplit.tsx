@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { fmtUsdt } from "@/lib/format";
 import { seriesVar } from "@/lib/palette";
 import {
@@ -72,7 +72,30 @@ export default function BrandSplit({
   );
   const total = useMemo(() => shares.reduce((a, b) => a + b, 0), [shares]);
   const diff = fromMicro(toMicro(amount) - toMicro(total));
-  const pas = multi && amount > 0 && sameUsdt(total, amount);
+
+  /**
+   * Brand yang dicentang tapi porsinya masih nol.
+   *
+   * Diperiksa terpisah dari jumlahnya, karena jumlah yang pas belum berarti sah:
+   * 10/40/50% ke tiga brand sudah menghabiskan nominalnya, tapi kalau ada enam
+   * brand dicentang maka tiga sisanya berporsi nol. Tanpa pemeriksaan ini
+   * formulirnya menulis "✓ pas" untuk keadaan yang pasti ditolak server.
+   */
+  const kosong = useMemo(
+    () => chosen.filter((id, i) => !(shares[i] > 0)),
+    [chosen, shares],
+  );
+
+  const pas = multi && amount > 0 && sameUsdt(total, amount) && kosong.length === 0;
+
+  /**
+   * Total porsi sebagai persen, untuk dilaporkan dalam satuan yang sama dengan
+   * yang diketik. Selisih yang hanya disebut dalam USDT ("lebih 500 USDT")
+   * menuntut orang menghitung sendiri berapa persen kelebihannya, padahal yang
+   * salah ketik justru kolom persennya.
+   */
+  const totalPct = sharePct(total, amount);
+  const lebih = amount > 0 && toMicro(total) > toMicro(amount);
 
   /** Menulis ulang kedua kolom sekaligus, supaya nominal dan persen tidak pernah berselisih. */
   function put(id: number, usdt: number) {
@@ -109,6 +132,28 @@ export default function BrandSplit({
       chosen.includes(id) ? chosen.filter((x) => x !== id) : [...chosen, id],
     );
   }
+
+  /**
+   * Nominal yang baru diisi belakangan tetap membagi porsinya sendiri.
+   *
+   * Brand sering dicentang sebelum nominalnya diketik. Tanpa ini, porsinya
+   * terkunci di 0,00 dengan peringatan merah, dan satu-satunya jalan keluar
+   * adalah menekan "Bagi rata" — yang tidak ada apa pun menyuruh melakukannya.
+   *
+   * Hanya berjalan selagi belum ada angka yang diketik sama sekali, jadi
+   * pembagian yang sudah disusun tangan tidak pernah ditimpa saat nominalnya
+   * dikoreksi.
+   */
+  const lastAuto = useRef("");
+  useEffect(() => {
+    const stamp = `${chosen.join(",")}|${amount}`;
+    if (!multi || !(amount > 0) || total > 0 || lastAuto.current === stamp) return;
+    lastAuto.current = stamp;
+    spreadEvenly();
+    // spreadEvenly sengaja tidak masuk daftar dependensi: fungsinya dibuat ulang
+    // setiap render, dan memasukkannya membuat efek ini berjalan tanpa henti.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [amount, multi, total, chosen]);
 
   /** Sisa yang belum terbagi dilimpahkan ke satu brand — jalan keluar tercepat dari persen yang tidak genap. */
   function absorb(id: number) {
@@ -220,10 +265,27 @@ export default function BrandSplit({
             </div>
           </div>
 
-          <div className="mt-2 grid gap-1.5 lg:grid-cols-2">
+          {/* Lebar kolom datang dari grid, bukan dari kelas lebar di input-nya.
+              `.field` di globals.css menetapkan `width: 100%` sebagai CSS tanpa
+              layer, dan di Tailwind v4 CSS tanpa layer selalu menang atas
+              `@layer utilities` — jadi `w-28`/`w-16` diabaikan tanpa suara,
+              kedua input melebar penuh, dan nama brand-nya terdorong jadi nol
+              piksel. Yang tersisa di layar cuma titik warna tanpa nama, dan
+              tidak ada cara tahu baris mana milik brand mana.
+
+              Satu brand per baris, bukan dua kolom: kolom angka yang berdampingan
+              membuat nama brand-nya terlalu sempit untuk dibaca begitu namanya
+              agak panjang. */}
+          <div className="mt-2 grid grid-cols-[minmax(0,1fr)_7rem_5.5rem] items-center gap-x-2 gap-y-1">
+            <div className="text-[10px] text-[var(--text-muted)]">Brand</div>
+            <div className="text-[10px] text-[var(--text-muted)]">Porsi (USDT)</div>
+            <div className="text-[10px] text-[var(--text-muted)]">
+              Persen dari nominal
+            </div>
+
             {chosenBrands.map((b) => (
-              <div key={b.id} className="flex items-center gap-2">
-                <span className="flex min-w-0 flex-1 items-center gap-1.5 text-sm">
+              <Fragment key={b.id}>
+                <span className="flex min-w-0 items-center gap-1.5 text-sm">
                   <span
                     aria-hidden
                     className="h-2 w-2 shrink-0 rounded-[2px]"
@@ -242,7 +304,7 @@ export default function BrandSplit({
                   inputMode="decimal"
                   aria-label={`Porsi ${b.name} dalam USDT`}
                   placeholder="0.00"
-                  className="field tnum w-28 shrink-0 py-1 text-xs"
+                  className="field tnum py-1 text-xs"
                   value={share[b.id] ?? ""}
                   onChange={(e) => {
                     const v = e.target.value;
@@ -257,30 +319,34 @@ export default function BrandSplit({
                     }));
                   }}
                 />
-                <input
-                  type="number"
-                  onWheel={blurOnWheel}
-                  step="0.01"
-                  min="0"
-                  max="100"
-                  inputMode="decimal"
-                  aria-label={`Porsi ${b.name} dalam persen`}
-                  placeholder="0"
-                  className="field tnum w-16 shrink-0 py-1 text-xs"
-                  value={pct[b.id] ?? ""}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setPct((p) => ({ ...p, [b.id]: v }));
-                    const n = Number(v.replace(",", ".")) || 0;
-                    const usdt = pctToShare(n, amount);
-                    setShare((s) => ({
-                      ...s,
-                      [b.id]: usdt === 0 ? "" : String(usdt),
-                    }));
-                  }}
-                />
-                <span className="shrink-0 text-[10px] text-[var(--text-muted)]">%</span>
-              </div>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    onWheel={blurOnWheel}
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    inputMode="decimal"
+                    aria-label={`Porsi ${b.name} dalam persen dari nominal`}
+                    placeholder="0"
+                    className="field tnum py-1 text-xs"
+                    value={pct[b.id] ?? ""}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setPct((p) => ({ ...p, [b.id]: v }));
+                      const n = Number(v.replace(",", ".")) || 0;
+                      const usdt = pctToShare(n, amount);
+                      setShare((s) => ({
+                        ...s,
+                        [b.id]: usdt === 0 ? "" : String(usdt),
+                      }));
+                    }}
+                  />
+                  <span className="shrink-0 text-[10px] text-[var(--text-muted)]">
+                    %
+                  </span>
+                </div>
+              </Fragment>
             ))}
           </div>
 
@@ -295,16 +361,67 @@ export default function BrandSplit({
             {amount <= 0 ? (
               <> — isi nominal transaksinya dulu.</>
             ) : pas ? (
-              <> ✓ pas</>
-            ) : (
+              <> ✓ pas — 100%</>
+            ) : Math.abs(diff) > 0 ? (
               <>
                 {" "}
                 — {diff > 0 ? "kurang" : "lebih"}{" "}
-                <strong className="tnum">{fmtUsdt(Math.abs(diff))}</strong>.
+                <strong className="tnum">{fmtUsdt(Math.abs(diff))}</strong>, total{" "}
+                <strong className="tnum">
+                  {totalPct.toLocaleString("id-ID", { maximumFractionDigits: 2 })}%
+                </strong>{" "}
+                dari 100%.
               </>
+            ) : (
+              <> — jumlahnya pas, tapi belum semua brand dapat porsi.</>
             )}
           </p>
 
+          {/* Kelebihan diberitahukan dalam persen, bukan hanya USDT: yang salah
+              ketik biasanya kolom persennya, dan "seharusnya tepat 100%" adalah
+              satu-satunya kalimat yang langsung menunjukkan apa yang keliru. */}
+          {lebih && (
+            <p
+              role="alert"
+              className="mt-1.5 rounded-lg px-2.5 py-2 text-xs"
+              style={{
+                color: "var(--status-critical)",
+                background:
+                  "color-mix(in srgb, var(--status-critical) 10%, transparent)",
+              }}
+            >
+              <strong>
+                Porsinya melebihi nominal — total{" "}
+                {totalPct.toLocaleString("id-ID", { maximumFractionDigits: 2 })}%,
+                seharusnya tepat 100%.
+              </strong>{" "}
+              Kelebihannya {fmtUsdt(Math.abs(diff))}. Kurangi salah satu porsinya
+              sampai totalnya {fmtUsdt(amount)}, atau tekan Bagi rata untuk
+              menyusun ulang dari awal.
+            </p>
+          )}
+
+          {/* Jumlah yang pas dengan sebagian brand berporsi nol adalah keadaan
+              yang paling mudah dibuat tanpa sadar: persen habis di beberapa brand
+              pertama, dan sisanya tertinggal. Disebutkan namanya, bukan cuma
+              jumlahnya, supaya tidak perlu diperiksa satu-satu. */}
+          {amount > 0 && kosong.length > 0 && (
+            <p className="mt-1 text-xs text-[var(--status-critical)]">
+              {kosong.length} brand belum dapat porsi:{" "}
+              <strong>
+                {kosong.map((id) => brands.find((b) => b.id === id)?.name).join(", ")}
+              </strong>
+              . Beri porsinya, buang centangnya, atau tekan Bagi rata — transaksi
+              berporsi 0 akan ditolak saat disimpan.
+            </p>
+          )}
+
+          <p className="hint mt-1">
+            Persen di sini adalah <strong>bagian brand itu dari nominal transaksi</strong>{" "}
+            — 10% dari {fmtUsdt(amount > 0 ? amount : 0)} berarti{" "}
+            {fmtUsdt(amount > 0 ? amount / 10 : 0)}. Jumlah seluruh persennya harus
+            100%. Bukan fee, dan tidak ada kaitannya dengan Fee agency (%) di bawah.
+          </p>
           <p className="hint mt-1">
             Disimpan sebagai {chosen.length} transaksi terpisah, satu per brand.
             Biaya jaringan ikut dibagi mengikuti perbandingan porsinya; fee agency

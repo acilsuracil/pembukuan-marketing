@@ -230,15 +230,7 @@ export default function TxForm({
                 : "Top-up biasanya masuk kolam bersama — isi hanya kalau memang titipan brand tertentu."}
             </p>
           </div>
-        ) : (
-          <div className="sm:col-span-2">
-            <BrandSplit
-              brands={brands}
-              amount={amountNum}
-              required={type === "out"}
-            />
-          </div>
-        )}
+        ) : null}
 
         <div>
           <label className="label" htmlFor="category_id">
@@ -282,6 +274,20 @@ export default function TxForm({
             onChange={(e) => setAmount(e.target.value)}
           />
         </div>
+
+        {/* Diletakkan SETELAH Nominal, bukan sebelumnya. Porsi tiap brand
+            dihitung dari nominal transaksinya, jadi menaruhnya lebih dulu
+            berarti orang menemui kolom porsi yang terkunci 0,00 beserta
+            peringatan merah sebelum ada apa pun untuk dibagi. */}
+        {!editing && (
+          <div className="sm:col-span-2">
+            <BrandSplit
+              brands={brands}
+              amount={amountNum}
+              required={type === "out"}
+            />
+          </div>
+        )}
 
         <div>
           <label className="label" htmlFor="fee_usdt">
