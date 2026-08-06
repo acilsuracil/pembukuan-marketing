@@ -18,6 +18,12 @@ import { blurOnWheel } from "./ui";
 
 const EMPTY: ActionState = { ok: false };
 
+/**
+ * Biaya jaringan bawaan untuk uang keluar. Sengaja teks, bukan angka, karena
+ * kolomnya dikemudikan sebagai teks — "1.5" dan 1.5 tidak sama bagi input.
+ */
+const DEFAULT_FEE_OUT = "1.5";
+
 function SubmitButton({ label, busy }: { label: string; busy?: boolean }) {
   const { pending } = useFormStatus();
   return (
@@ -54,7 +60,25 @@ export default function TxForm({
   const [type, setType] = useState<"in" | "out">(initial?.type ?? "out");
   const [date, setDate] = useState(initial?.date ?? todayISO());
   const [amount, setAmount] = useState(String(initial?.amount_usdt ?? ""));
-  const [fee, setFee] = useState(String(initial?.fee_usdt ?? ""));
+
+  /**
+   * Biaya jaringan pengeluaran hampir selalu sebesar ini, jadi kolomnya
+   * terisi sendiri. Mengetik angka yang sama puluhan kali sehari adalah kerja
+   * yang tidak perlu — dan yang diketik berulang justru paling mudah salah.
+   */
+  const [fee, setFee] = useState(
+    // Saat mengubah transaksi lama, yang tampil harus nilai tersimpannya apa
+    // adanya. Menaruh nilai bawaan di sini akan diam-diam menimpa biaya yang
+    // sudah benar begitu formulirnya dibuka.
+    editing ? String(initial!.fee_usdt ?? "") : DEFAULT_FEE_OUT,
+  );
+  /**
+   * Sudah disentuh orangnya? Selagi belum, kolomnya mengikuti jenis transaksi:
+   * terisi untuk uang keluar, kosong untuk uang masuk. Begitu diketik — termasuk
+   * dikosongkan — kolomnya berhenti berubah sendiri, jadi menghapus biaya lalu
+   * berganti jenis tidak membuat angkanya muncul lagi.
+   */
+  const [feeTouched, setFeeTouched] = useState(false);
   const [feePct, setFeePct] = useState(
     initial?.fee_pct ? String(initial.fee_pct) : "",
   );
@@ -81,6 +105,18 @@ export default function TxForm({
     }
     return found;
   }, [inRates, date]);
+
+  /**
+   * Biaya jaringan bawaan hanya berlaku untuk uang keluar.
+   *
+   * Pada uang masuk, biaya justru DIPOTONG dari nominal — mengisinya 1,5 diam-diam
+   * akan mengurangi jumlah yang tercatat masuk, dan itu jenis kesalahan yang tidak
+   * terlihat sampai saldonya tidak cocok berbulan-bulan kemudian.
+   */
+  function changeType(next: "in" | "out") {
+    setType(next);
+    if (!editing && !feeTouched) setFee(next === "out" ? DEFAULT_FEE_OUT : "");
+  }
 
   const catOptions = categories.filter((c) => c.kind === type);
   const amountNum = Number(amount.replace(",", ".")) || 0;
@@ -161,7 +197,7 @@ export default function TxForm({
                 name="type"
                 value={o.v}
                 checked={type === o.v}
-                onChange={() => setType(o.v)}
+                onChange={() => changeType(o.v)}
                 className="sr-only"
               />
               <span className="flex items-center gap-1.5 text-sm font-medium">
@@ -305,9 +341,18 @@ export default function TxForm({
             placeholder="0"
             className="field tnum"
             value={fee}
-            onChange={(e) => setFee(e.target.value)}
+            onChange={(e) => {
+              setFee(e.target.value);
+              setFeeTouched(true);
+            }}
           />
           <p className="hint">
+            {!editing && !feeTouched && type === "out" && (
+              <>
+                Terisi {DEFAULT_FEE_OUT} karena kebanyakan transfer segitu — hapus
+                kalau transaksi ini memang tanpa biaya.{" "}
+              </>
+            )}
             {type === "in"
               ? "Dipotong dari nominal — yang dicatat masuk adalah nominal dikurangi fee."
               : "Ditambahkan ke nominal — total yang keluar dari dompet."}
