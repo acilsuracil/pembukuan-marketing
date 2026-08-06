@@ -214,11 +214,22 @@ export default async function DetailTransaksiPage({
 
           <p className="mt-3 text-xs text-[var(--text-muted)]">
             Bukti transfernya menempel di porsi pertama (#{t.split_head_id}) dan
-            ditampilkan di setiap porsi. <strong>Mengubah</strong> di sini hanya
-            mengenai porsi ini — kalau pembagiannya yang salah, hapus lalu catat
-            ulang. <strong>Menghapus</strong> membuang seluruh {siblings.length}{" "}
-            porsi sekaligus, karena menyisakan sebagian akan membuat pembukuannya
-            mencatat pembayaran yang lebih kecil dari kenyataan.
+            ditampilkan di setiap porsi.{" "}
+            {canEdit ? (
+              <>
+                <strong>Mengubah</strong> mengenai seluruh {siblings.length} porsi
+                sekaligus — nominal totalnya, pembagiannya, sampai brand mana saja
+                yang ikut, semuanya di satu formulir.
+              </>
+            ) : (
+              <>
+                <strong>Mengubah</strong> di sini hanya mengenai porsi ini, karena
+                pengajuan perubahan dicatat per porsi.
+              </>
+            )}{" "}
+            <strong>Menghapus</strong> membuang seluruh {siblings.length} porsi
+            sekaligus, karena menyisakan sebagian akan membuat pembukuannya mencatat
+            pembayaran yang lebih kecil dari kenyataan.
           </p>
         </section>
       )}
@@ -226,7 +237,11 @@ export default async function DetailTransaksiPage({
       {editing ? (
         <section className="card p-4 sm:p-6">
           <h2 className="mb-4 text-sm font-semibold">
-            {canEdit ? "Ubah transaksi" : "Ajukan perubahan"}
+            {canEdit
+              ? siblings.length > 1
+                ? `Ubah pembayaran — ${siblings.length} porsi sekaligus`
+                : "Ubah transaksi"
+              : "Ajukan perubahan"}
           </h2>
           <TxForm
             categories={listCategories(true)}
@@ -234,6 +249,7 @@ export default async function DetailTransaksiPage({
             inRates={incomeRates()}
             initial={t}
             canEditDirectly={canEdit}
+            groupMembers={siblings}
           />
         </section>
       ) : (

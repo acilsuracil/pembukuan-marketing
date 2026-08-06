@@ -6,10 +6,12 @@ import { useActionState, useEffect, useMemo, useState } from "react";
 import { useFormStatus } from "react-dom";
 import {
   createTransaction,
+  updateSplitGroup,
   updateTransaction,
   type ActionState,
 } from "@/app/actions";
 import { fmtIdr, fmtRate, fmtUsdt, todayISO } from "@/lib/format";
+import { fromMicro, toMicro } from "@/lib/split";
 import type { Brand, Category, TxRow } from "@/lib/types";
 import BrandSplit from "./BrandSplit";
 import BuktiInput from "./BuktiInput";
@@ -39,6 +41,7 @@ export default function TxForm({
   inRates,
   initial,
   canEditDirectly,
+  groupMembers,
 }: {
   categories: Category[];
   brands: Brand[];
@@ -47,19 +50,53 @@ export default function TxForm({
   initial?: TxRow;
   /** Punya izin "edit"; kalau tidak, perubahan jadi pengajuan. */
   canEditDirectly: boolean;
+  /**
+   * Seluruh porsi dari pembayaran yang dibagi, terurut. Kehadirannya mengubah
+   * formulir jadi mengubah **satu grup sekaligus**, bukan satu porsi.
+   */
+  groupMembers?: TxRow[];
 }) {
   const router = useRouter();
   const editing = Boolean(initial);
   const needsRequest = editing && !canEditDirectly;
 
+  /**
+   * Ubah-grup hanya untuk pemegang izin ubah langsung. Payload pengajuan berisi
+   * satu brand, jadi perubahan seluruh grup tidak bisa diwakili olehnya —
+   * pemegang izin terbatas tetap mengajukan per porsi seperti sebelumnya.
+   */
+  const group =
+    editing && canEditDirectly && groupMembers && groupMembers.length > 1
+      ? groupMembers
+      : null;
+
   const [state, formAction] = useActionState(
-    editing ? updateTransaction : createTransaction,
+    group ? updateSplitGroup : editing ? updateTransaction : createTransaction,
     EMPTY,
   );
 
+  /**
+   * Saat mengubah grup, kolom Nominal berisi **total pembayarannya**, bukan
+   * nominal satu porsi — porsinya diatur di blok brand di bawahnya.
+   *
+   * Dijumlahkan lewat satuan terkecil, bukan penjumlahan float biasa: 150,29 +
+   * 253,21 bisa menghasilkan 403,49999999999994, dan angka itu akan muncul apa
+   * adanya di kolom nominal begitu formulirnya dibuka.
+   */
+  const groupSum = group
+    ? {
+        amount: fromMicro(
+          group.reduce((n, m) => n + toMicro(m.amount_usdt), 0),
+        ),
+        fee: fromMicro(group.reduce((n, m) => n + toMicro(m.fee_usdt), 0)),
+      }
+    : null;
+
   const [type, setType] = useState<"in" | "out">(initial?.type ?? "out");
   const [date, setDate] = useState(initial?.date ?? todayISO());
-  const [amount, setAmount] = useState(String(initial?.amount_usdt ?? ""));
+  const [amount, setAmount] = useState(
+    groupSum ? String(groupSum.amount) : String(initial?.amount_usdt ?? ""),
+  );
 
   /**
    * Biaya jaringan pengeluaran hampir selalu sebesar ini, jadi kolomnya
@@ -70,7 +107,11 @@ export default function TxForm({
     // Saat mengubah transaksi lama, yang tampil harus nilai tersimpannya apa
     // adanya. Menaruh nilai bawaan di sini akan diam-diam menimpa biaya yang
     // sudah benar begitu formulirnya dibuka.
-    editing ? String(initial!.fee_usdt ?? "") : DEFAULT_FEE_OUT,
+    groupSum
+      ? String(groupSum.fee)
+      : editing
+        ? String(initial!.fee_usdt ?? "")
+        : DEFAULT_FEE_OUT,
   );
   /**
    * Sudah disentuh orangnya? Selagi belum, kolomnya mengikuti jenis transaksi:
@@ -133,7 +174,11 @@ export default function TxForm({
 
   return (
     <form action={formAction} className="space-y-5">
-      {editing && <input type="hidden" name="id" value={initial!.id} />}
+      {group ? (
+        <input type="hidden" name="split_group" value={group[0].split_group ?? ""} />
+      ) : (
+        editing && <input type="hidden" name="id" value={initial!.id} />
+      )}
 
       {state.error && (
         <p
@@ -234,7 +279,7 @@ export default function TxForm({
             grupnya — termasuk baris-baris yang tidak sedang dibuka — dan itu
             tidak bisa diwakili oleh satu pengajuan perubahan. Ubahan di sini
             berlaku untuk satu porsi saja; lihat catatan di halaman detail. */}
-        {editing ? (
+        {group ? null : editing ? (
           <div>
             <label className="label" htmlFor="brand_id">
               Brand{" "}
@@ -315,12 +360,20 @@ export default function TxForm({
             dihitung dari nominal transaksinya, jadi menaruhnya lebih dulu
             berarti orang menemui kolom porsi yang terkunci 0,00 beserta
             peringatan merah sebelum ada apa pun untuk dibagi. */}
-        {!editing && (
+        {/* Blok yang sama dipakai saat mencatat baru maupun saat mengubah
+            seluruh grup. Bedanya cuma porsi awalnya: yang sudah tercatat dimuat
+            apa adanya, jadi membuka formulir tidak mengubah angka apa pun sampai
+            benar-benar disunting. */}
+        {(!editing || group) && (
           <div className="sm:col-span-2">
             <BrandSplit
               brands={brands}
               amount={amountNum}
               required={type === "out"}
+              initialShares={group?.map((m) => ({
+                brandId: m.brand_id as number,
+                amount: m.amount_usdt,
+              }))}
             />
           </div>
         )}

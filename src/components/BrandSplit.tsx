@@ -41,6 +41,7 @@ export default function BrandSplit({
   amount,
   required,
   initialBrandId,
+  initialShares,
 }: {
   brands: Brand[];
   /** Nominal transaksi yang sedang diisi — dasar seluruh porsi. */
@@ -48,14 +49,35 @@ export default function BrandSplit({
   /** Pengeluaran wajib punya brand; pemasukan tidak. */
   required: boolean;
   initialBrandId?: number | null;
+  /**
+   * Porsi yang sudah tercatat, dipakai saat mengubah pembayaran yang dibagi.
+   *
+   * Kehadirannya langsung menyalakan mode manual: angka-angka ini nilai yang
+   * benar-benar tersimpan, jadi tidak boleh ditimpa pembagian rata hanya karena
+   * formulirnya dibuka.
+   */
+  initialShares?: Array<{ brandId: number; amount: number }>;
 }) {
+  const seeded = initialShares && initialShares.length > 0 ? initialShares : null;
+
   const [chosen, setChosen] = useState<number[]>(
-    initialBrandId ? [initialBrandId] : [],
+    seeded ? seeded.map((s) => s.brandId) : initialBrandId ? [initialBrandId] : [],
   );
   /** Porsi per brand dalam USDT, sebagai teks — kolom yang sedang diketik. */
-  const [share, setShare] = useState<Record<number, string>>({});
+  const [share, setShare] = useState<Record<number, string>>(() =>
+    Object.fromEntries((seeded ?? []).map((s) => [s.brandId, String(s.amount)])),
+  );
   /** Kolom persen ditulis terpisah supaya "33,33" tidak dibulatkan saat diketik. */
-  const [pct, setPct] = useState<Record<number, string>>({});
+  const [pct, setPct] = useState<Record<number, string>>(() =>
+    Object.fromEntries(
+      (seeded ?? []).map((s) => [
+        s.brandId,
+        amount > 0 && s.amount !== 0
+          ? String(Math.round(sharePct(s.amount, amount) * 100) / 100)
+          : "",
+      ]),
+    ),
+  );
   /**
    * Sudah ada porsi yang diketik tangan?
    *
@@ -64,7 +86,7 @@ export default function BrandSplit({
    * pembagian yang sudah disusun orang tidak boleh hilang hanya karena
    * nominalnya dikoreksi sedikit.
    */
-  const [manual, setManual] = useState(false);
+  const [manual, setManual] = useState(Boolean(seeded));
   /** Daftar brand disembunyikan sampai diminta — 17 brand yang terbentang terus memakan layar. */
   const [open, setOpen] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);

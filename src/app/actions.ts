@@ -419,6 +419,120 @@ export async function createTransaction(
 }
 
 /**
+ * Mengubah satu pembayaran yang dibagi ke beberapa brand — seluruh porsinya
+ * sekaligus, bukan satu per satu.
+ *
+ * Nilai bersama (tanggal, jenis, kategori, kurs, keterangan, fee agency) berlaku
+ * untuk semua porsi; nominal dan biaya jaringannya dibagi ulang mengikuti porsi
+ * yang dikirim.
+ *
+ * Grupnya ditulis ulang dengan **memakai kembali baris yang sudah ada**, terurut
+ * dari id terkecil. Itu bukan sekadar hemat: bukti transfer menempel pada baris
+ * pertama grup lewat foreign key ber-`ON DELETE CASCADE`, jadi menghapus lalu
+ * menyisipkan ulang seluruh grup akan menghapus bukti transfernya permanen —
+ * tanpa peringatan, dan tanpa cara memulihkan. Karena porsi pertama selalu
+ * memetakan ke id terkecil, baris pemegang bukti tidak pernah ikut terhapus;
+ * yang dibuang hanya kelebihan baris di ekornya.
+ *
+ * Hanya untuk pemegang izin ubah. Jalur pengajuan tetap per porsi: payload
+ * pengajuan berisi satu brand, dan mengubah bentuknya akan membuat pengajuan
+ * lama yang masih menunggu tidak bisa diterapkan lagi.
+ */
+export async function updateSplitGroup(
+  _prev: ActionState,
+  fd: FormData,
+): Promise<ActionState> {
+  const me = await authed();
+  if (!me) return DENIED;
+  if (!hasPerm(me, "edit")) return NO_ACCESS;
+
+  const group = str(fd, "split_group");
+  if (!group) return { ok: false, error: "Grup pembagian tidak dikenali." };
+
+  const members = splitMembers(group);
+  if (members.length === 0)
+    return { ok: false, error: "Pembayaran ini sudah tidak ada." };
+
+  const parsed = readTx(fd);
+  if (!parsed.ok) return { ok: false, error: parsed.error };
+  const { v } = parsed;
+
+  // Tanggal lama DAN tanggal baru diperiksa: memindahkan transaksi keluar dari
+  // periode terkunci sama saja dengan mengubah periode yang sudah dikunci.
+  for (const m of members)
+    if (isLocked(m.date)) return { ok: false, error: lockError(m.date) };
+  if (isLocked(v.date)) return { ok: false, error: lockError(v.date) };
+
+  // Pengajuan yang masih menunggu pada porsi mana pun menahan seluruh grup:
+  // menerapkan perubahan sekarang membuat pengajuan itu mengacu ke nilai yang
+  // sudah tidak ada lagi.
+  for (const m of members) {
+    if (pendingRequestFor(m.id))
+      return {
+        ok: false,
+        error: `Porsi #${m.id} punya pengajuan yang menunggu keputusan. Putuskan dulu sebelum mengubah.`,
+      };
+  }
+
+  const split = readParts(fd, v);
+  if (!split.ok) return { ok: false, error: split.error };
+  const { parts } = split;
+
+  const now = new Date().toISOString();
+  // Tersisa satu brand berarti ini bukan pembagian lagi; penandanya dilepas
+  // supaya barisnya kembali jadi transaksi biasa.
+  const nextGroup = parts.length > 1 ? group : null;
+  const ids = members.map((m) => m.id).sort((a, b) => a - b);
+
+  try {
+    inTransaction(() => {
+      parts.forEach((p, i) => {
+        if (i < ids.length) {
+          run(
+            `UPDATE transactions SET
+               date = ?, type = ?, amount_usdt = ?, fee_usdt = ?, fee_pct = ?, rate_idr = ?,
+               category_id = ?, brand_id = ?, description = ?, counterparty = ?,
+               tx_hash = ?, split_group = ?, updated_at = ?
+             WHERE id = ?`,
+            v.date, v.type, p.amount, p.fee, v.feePct, v.rate, v.categoryId, p.brandId,
+            v.description, v.counterparty, v.txHash, nextGroup, now, ids[i],
+          );
+        } else {
+          run(
+            `INSERT INTO transactions
+               (date, type, amount_usdt, fee_usdt, fee_pct, rate_idr, category_id, brand_id,
+                description, counterparty, tx_hash, created_by, created_at, updated_at, split_group)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            v.date, v.type, p.amount, p.fee, v.feePct, v.rate, v.categoryId, p.brandId,
+            v.description, v.counterparty, v.txHash, me.id, now, now, nextGroup,
+          );
+        }
+      });
+      // Kelebihan baris dibuang dari ekornya — id terbesar — sehingga baris
+      // pertama yang memegang bukti tidak pernah tersentuh.
+      for (const extra of ids.slice(parts.length)) {
+        run(`DELETE FROM transactions WHERE id = ?`, extra);
+      }
+    });
+  } catch (e) {
+    return { ok: false, error: `Gagal memperbarui: ${(e as Error).message}` };
+  }
+
+  logActivity(
+    me,
+    "ubah-transaksi",
+    `grup #${ids[0]} — ${members.length} porsi jadi ${parts.length}, ` +
+      `total ${v.amount} USDT (${v.date})`,
+  );
+  await touchSession(me);
+  refresh();
+
+  // Porsi yang sedang dibuka bisa saja baru terhapus karena grupnya menyusut,
+  // jadi tujuannya selalu baris pertama yang pasti masih ada.
+  redirect(`/transaksi/${ids[0]}`);
+}
+
+/**
  * Admin mengubah langsung. Staff tidak menulis apa pun — perubahannya
  * dicatat sebagai pengajuan yang menunggu keputusan admin.
  */
