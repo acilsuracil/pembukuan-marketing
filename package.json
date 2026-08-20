@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start -H 0.0.0.0",
-    "lint": "eslint"
+    "lint": "eslint",
+    "cek-saldo": "node scripts/cek-saldo.mjs",
+    "cek-transfer": "node scripts/cek-transfer.mjs",
+    "e2e": "node scripts/e2e.mjs"
   },
   "engines": {
     "node": ">=22.5.0"

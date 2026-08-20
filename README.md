@@ -118,6 +118,32 @@ npm run build && npm start
 5. **Baca laporan** — `/laporan`: total biaya, per divisi, per platform, per
    brand, matriks divisi × platform, tren bulanan, ekspor CSV.
 
+## Menguji
+
+Tiga skrip, semuanya menembak database dan HTTP sungguhan — bukan tiruan. Semua
+butuh **folder data yang boleh dikotori**, karena isinya dikosongkan sebelum dan
+sesudah bekerja.
+
+```bash
+# 1. Nyalakan instance uji di folder data terpisah
+MARKETING_DATA_DIR=/tmp/uji PORT=3125 npm start
+
+# 2. Aturan saldo & biaya per jenis baris, plus CHECK constraint database
+npm run cek-saldo    -- /tmp/uji/marketing.db
+
+# 3. Pindah saldo antar-dompet: pasangan, total saldo, hapus dua sisi
+npm run cek-transfer -- /tmp/uji/marketing.db
+
+# 4. Alur lengkap lewat HTTP: setup owner → dompet → penerima → pengajuan →
+#    tandai cair → input harian → pindah saldo → ringkasan/laporan/CSV
+npm run e2e          -- http://localhost:3125 /tmp/uji/marketing.db
+```
+
+`e2e` menekan formulirnya lewat jalur tanpa-JavaScript milik Next (kolom
+tersembunyi `$ACTION_*` yang memang dikirim ulang browser saat JS mati), jadi
+yang berjalan aksi server yang sama persis dengan yang dipakai tombol asli —
+termasuk seluruh validasinya.
+
 ## Peran
 
 | Peran | Bisa |
