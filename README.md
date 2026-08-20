@@ -49,6 +49,28 @@ menentukan efeknya:
 | `refund` | + (kalau kembali ke dompet) | − |
 | `biaya_dompet` (admin bank) | − | + |
 | `koreksi` | ± | 0 |
+| `transfer_keluar` / `transfer_masuk` | − / + | 0 |
+
+### Pindah saldo antar-dompet
+
+Memindahkan uang dari Bank Jago ke Jenius dicatat sebagai **dua baris
+berpasangan** — keluar dari asal, masuk ke tujuan — bukan satu baris yang
+menyentuh dua dompet. Dengan begitu setiap baris tetap milik tepat satu dompet,
+jadi saldo, mutasi, dan opname tiap dompet dihitung dengan rumus yang sama
+seperti sebelum fitur ini ada.
+
+Konsekuensinya, dan ini disengaja:
+
+- Satu sisi transfer tidak bisa dibuat sendirian — formulir transaksi satuan
+  tidak menawarkan jenis transfer sama sekali.
+- Menghapus transfer mengambil kedua sisinya sekaligus. Menyisakan satu sisi
+  berarti saldo sebuah dompet bergerak tanpa lawan, dan karena transfer tidak
+  menyentuh total biaya, tidak ada angka lain yang akan memperlihatkannya.
+- Mengubah satu sisi ditolak; hapus lalu catat ulang.
+- Biaya transfer antar-bank dicatat terpisah sebagai biaya bank pada dompet asal
+  — itu memang biaya, sementara pindahannya sendiri bukan.
+
+Halamannya: **/dompet/transfer** (tombol "Pindah saldo" di halaman Dompet).
 
 ---
 
