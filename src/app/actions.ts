@@ -1,8 +1,15 @@
 "use server";
 
+import crypto from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { hashPassword, passwordProblem } from "@/lib/auth";
 import { createBackup, removeBackup, restoreBackup } from "@/lib/backup";
+import {
+  buktiProblem,
+  buktiTotalProblem,
+  EXT_BY_MIME,
+  MAX_BUKTI_PER_TX,
+} from "@/lib/bukti";
 import { run, setSetting, tx as inTransaction } from "@/lib/db";
 import { fmtIdr, todayISO } from "@/lib/format";
 import { JENIS_MANUAL } from "@/lib/jenis";
@@ -19,15 +26,19 @@ import {
   type PermMap,
 } from "@/lib/policy";
 import {
+  attachmentsOf,
   countActiveOwners,
+  getAttachment,
   getDompet,
   getPengajuan,
   getSaldoDompet,
   getTransaksi,
   getUserById,
+  listTransaksi,
   masterUsage,
 } from "@/lib/queries";
 import { getUser, touchSession, type SessionUser } from "@/lib/session";
+import { deleteObject, putObject } from "@/lib/storage";
 import type { Jenis, PengajuanStatus, Sumber, Tujuan } from "@/lib/types";
 
 export interface ActionState {
@@ -467,6 +478,154 @@ export async function deleteMaster(
   return { ok: true, message: `${MASTER[kind].label} dihapus.` };
 }
 
+/* ================================================================= bukti */
+
+/** Berkas yang benar-benar terkirim (kolom kosong ikut terkirim sebagai 0 byte). */
+function buktiFiles(fd: FormData): File[] {
+  return fd
+    .getAll("bukti")
+    .filter((v): v is File => v instanceof File)
+    .filter((f) => f.size > 0);
+}
+
+/** Alasan sekumpulan bukti ditolak sebelum apa pun ditulis, atau null. */
+function buktiRejection(files: File[], sudahAda = 0): string | null {
+  if (sudahAda + files.length > MAX_BUKTI_PER_TX)
+    return `Maksimal ${MAX_BUKTI_PER_TX} bukti per transaksi (sekarang sudah ${sudahAda}).`;
+  for (const f of files) {
+    const problem = buktiProblem(f);
+    if (problem) return problem;
+  }
+  return buktiTotalProblem(files);
+}
+
+/**
+ * Menyimpan berkas bukti + mencatat barisnya. Mengembalikan pesan galat, atau
+ * null kalau semuanya tersimpan.
+ *
+ * Diunggah serentak: tiap berkas satu round-trip ke penyimpanan dan tidak saling
+ * bergantung, jadi mengunggahnya berurutan cuma membuat orang menunggu
+ * penjumlahan seluruh latensinya. Batas gabungan yang sudah diperiksa di
+ * `buktiRejection` sekaligus jadi pagar memorinya.
+ */
+async function saveBukti(
+  txId: number,
+  files: File[],
+  user: SessionUser,
+): Promise<string | null> {
+  if (files.length === 0) return null;
+  const now = new Date().toISOString();
+
+  const uploads = await Promise.all(
+    files.map(async (f) => {
+      const stored = `${crypto.randomUUID()}${EXT_BY_MIME[f.type]}`;
+      try {
+        const buf = Buffer.from(await f.arrayBuffer());
+        return {
+          ok: true as const,
+          f,
+          stored,
+          backend: await putObject(stored, buf, f.type),
+        };
+      } catch (e) {
+        return { ok: false as const, f, message: (e as Error).message };
+      }
+    }),
+  );
+
+  // Baris hanya dicatat untuk berkas yang benar-benar tersimpan, supaya tidak
+  // ada bukti yatim yang tampil di UI tapi tidak bisa dibuka. Ditulis dalam
+  // urutan berkas aslinya, bukan urutan siapa yang selesai lebih dulu.
+  for (const u of uploads) {
+    if (!u.ok) continue;
+    run(
+      `INSERT INTO attachments
+         (id, tx_id, stored_name, orig_name, mime, size, uploaded_by, created_at, storage)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      crypto.randomUUID(), txId, u.stored, u.f.name.slice(0, 160), u.f.type,
+      u.f.size, user.id, now, u.backend,
+    );
+  }
+
+  const failed = uploads.flatMap((u) => (u.ok ? [] : [u]));
+  if (failed.length === 0) return null;
+  return (
+    `${failed.length} dari ${uploads.length} bukti gagal diunggah — ` +
+    failed.map((u) => `"${u.f.name}"`).join(", ") +
+    `. (${failed[0].message})`
+  );
+}
+
+/** Membuang berkas fisiknya. Barisnya sendiri ikut terhapus lewat CASCADE. */
+async function removeBuktiFiles(txId: number) {
+  for (const a of attachmentsOf(txId)) {
+    await deleteObject(a.stored_name, a.storage);
+  }
+}
+
+export async function addBukti(
+  _prev: ActionState,
+  fd: FormData,
+): Promise<ActionState> {
+  const me = await authed();
+  if (!me) return DENIED;
+  if (!hasPerm(me, "addBelanja")) return NO_ACCESS;
+
+  const txId = Number(str(fd, "tx_id"));
+  const t = getTransaksi(txId);
+  if (!t) return { ok: false, error: "Transaksi tidak ditemukan." };
+  if (isLocked(t.tanggal)) return { ok: false, error: lockError(t.tanggal) };
+
+  const files = buktiFiles(fd);
+  if (files.length === 0) return { ok: false, error: "Belum ada berkas yang dipilih." };
+
+  const rejection = buktiRejection(files, attachmentsOf(txId).length);
+  if (rejection) return { ok: false, error: rejection };
+
+  const problem = await saveBukti(txId, files, me);
+  logActivity(me, "tambah-bukti", `#${txId} ${files.length} berkas`);
+  await touchSession(me);
+  refresh();
+  if (problem) return { ok: false, error: problem };
+  return { ok: true, message: `${files.length} bukti tersimpan.` };
+}
+
+export async function deleteBukti(
+  _prev: ActionState,
+  fd: FormData,
+): Promise<ActionState> {
+  const me = await authed();
+  if (!me) return DENIED;
+
+  const att = getAttachment(str(fd, "id"));
+  if (!att) return { ok: false, error: "Bukti tidak ditemukan." };
+
+  const t = getTransaksi(att.tx_id);
+  if (t && isLocked(t.tanggal)) return { ok: false, error: lockError(t.tanggal) };
+  if (!hasPerm(me, "deleteBelanja") && att.uploaded_by !== me.id)
+    return {
+      ok: false,
+      error: "Kamu hanya bisa menghapus bukti yang kamu unggah sendiri.",
+    };
+
+  // Bukti terakhir tidak boleh hilang dari baris yang lahir dari pengajuan:
+  // dana cair tanpa bukti transfer justru keadaan yang aturan ini cegah sejak
+  // awal, dan menghapusnya di sini adalah pintu belakang menuju keadaan itu.
+  if (t?.pengajuan_id && attachmentsOf(att.tx_id).length <= 1)
+    return {
+      ok: false,
+      error:
+        "Ini bukti terakhir untuk dana yang sudah cair. Unggah bukti pengganti dulu, baru hapus yang ini.",
+    };
+
+  await deleteObject(att.stored_name, att.storage);
+  run(`DELETE FROM attachments WHERE id = ?`, att.id);
+  logActivity(me, "hapus-bukti", `#${att.tx_id} ${att.orig_name}`);
+  await touchSession(me);
+  refresh();
+  return { ok: true, message: "Bukti dihapus." };
+}
+
 /* ============================================================== pengajuan */
 
 interface PengajuanValues {
@@ -678,27 +837,46 @@ export async function setPengajuanStatus(
       error: "Isi divisinya dulu di pengajuan — tanpa itu belanjanya tidak masuk laporan mana pun.",
     };
 
+  /*
+   * Bukti transfer wajib, dan diperiksa **sebelum** apa pun ditulis.
+   *
+   * Dana cair adalah satu-satunya titik di alur ini yang tidak bisa diperiksa
+   * ulang dari data lain: pengajuan hanya menyatakan permintaan, dan begitu
+   * ditandai dibayar seluruh laporan mempercayainya. Bukti transfer inilah
+   * satu-satunya penambat ke kenyataan — jadi urutannya validasi dulu, tulis
+   * kemudian, supaya tidak pernah ada baris buku besar yang lahir tanpa bukti.
+   */
+  const files = buktiFiles(fd);
+  if (files.length === 0)
+    return {
+      ok: false,
+      error:
+        "Lampirkan bukti transfernya dulu. Tangkapan layar mutasi bisa langsung ditempel dengan Ctrl/⌘ + V.",
+    };
+  const rejection = buktiRejection(files);
+  if (rejection) return { ok: false, error: rejection };
+
   const now = new Date().toISOString();
+  let txId: number;
   try {
-    inTransaction(() => {
-      if (g.tujuan === "dompet") {
-        run(
-          `INSERT INTO transaksi (tanggal, jenis, nominal, dompet_id, pengajuan_id,
-                                  keterangan, no_ref, created_by, created_at)
-           VALUES (?, 'topup', ?, ?, ?, ?, ?, ?, ?)`,
-          tanggalBayar, nominal, g.dompet_id, g.id,
-          g.keterangan, str(fd, "no_ref"), me.id, now,
-        );
-      } else {
-        run(
-          `INSERT INTO transaksi (tanggal, jenis, nominal, sumber, divisi_id, platform_id,
-                                  brand_id, penerima_id, pengajuan_id, keterangan, no_ref,
-                                  created_by, created_at)
-           VALUES (?, 'belanja', ?, 'finance', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          tanggalBayar, nominal, g.divisi_id, g.platform_id, g.brand_id,
-          g.penerima_id, g.id, g.keterangan, str(fd, "no_ref"), me.id, now,
-        );
-      }
+    txId = inTransaction(() => {
+      const res =
+        g.tujuan === "dompet"
+          ? run(
+              `INSERT INTO transaksi (tanggal, jenis, nominal, dompet_id, pengajuan_id,
+                                      keterangan, no_ref, created_by, created_at)
+               VALUES (?, 'topup', ?, ?, ?, ?, ?, ?, ?)`,
+              tanggalBayar, nominal, g.dompet_id, g.id,
+              g.keterangan, str(fd, "no_ref"), me.id, now,
+            )
+          : run(
+              `INSERT INTO transaksi (tanggal, jenis, nominal, sumber, divisi_id, platform_id,
+                                      brand_id, penerima_id, pengajuan_id, keterangan, no_ref,
+                                      created_by, created_at)
+               VALUES (?, 'belanja', ?, 'finance', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              tanggalBayar, nominal, g.divisi_id, g.platform_id, g.brand_id,
+              g.penerima_id, g.id, g.keterangan, str(fd, "no_ref"), me.id, now,
+            );
       run(
         `UPDATE pengajuan SET status = 'dibayar', tanggal_bayar = ?, nominal_cair = ?,
                 catatan = ?, updated_at = ? WHERE id = ?`,
@@ -708,9 +886,32 @@ export async function setPengajuanStatus(
         now,
         id,
       );
+      return Number(res.lastInsertRowid);
     });
   } catch (e) {
     return { ok: false, error: `Gagal mencatat pembayaran: ${(e as Error).message}` };
+  }
+
+  /*
+   * Bukti disimpan setelah barisnya ada — ia butuh tx_id. Kalau tidak ada satu
+   * pun berkas yang berhasil tersimpan, pencatatannya dibatalkan seluruhnya:
+   * lebih baik orang mengulang daripada meninggalkan dana cair tanpa bukti,
+   * karena keadaan itulah yang justru dicegah aturan ini.
+   */
+  const masalahBukti = await saveBukti(txId, files, me);
+  if (attachmentsOf(txId).length === 0) {
+    inTransaction(() => {
+      run(`DELETE FROM transaksi WHERE id = ?`, txId);
+      run(
+        `UPDATE pengajuan SET status = ?, tanggal_bayar = NULL, nominal_cair = NULL,
+                updated_at = ? WHERE id = ?`,
+        g.status, new Date().toISOString(), id,
+      );
+    });
+    return {
+      ok: false,
+      error: `Pembayaran dibatalkan karena buktinya gagal diunggah. ${masalahBukti ?? ""}`.trim(),
+    };
   }
 
   logActivity(
@@ -720,12 +921,17 @@ export async function setPengajuanStatus(
   );
   await touchSession(me);
   refresh();
+  const jumlahBukti = attachmentsOf(txId).length;
   return {
     ok: true,
     message:
-      g.tujuan === "dompet"
+      (g.tujuan === "dompet"
         ? `Dana ${fmtIdr(nominal)} masuk ${g.dompet_name}. Belanjanya dicatat menyusul dari input harian.`
-        : `Belanja ${fmtIdr(nominal)} tercatat.`,
+        : `Belanja ${fmtIdr(nominal)} tercatat.`) +
+      ` ${jumlahBukti} bukti terlampir.` +
+      // Sebagian bukti gagal bukan alasan menggagalkan pencatatannya, tapi harus
+      // dikatakan — yang gagal perlu diunggah ulang dari halaman detail.
+      (masalahBukti ? ` ${masalahBukti}` : ""),
   };
 }
 
@@ -745,6 +951,10 @@ export async function cancelPembayaran(
     return { ok: false, error: "Pengajuan ini tidak sedang berstatus dibayar." };
   if (g.tanggal_bayar && isLocked(g.tanggal_bayar))
     return { ok: false, error: lockError(g.tanggal_bayar) };
+
+  // Berkas buktinya dibuang lebih dulu, selagi barisnya masih ada untuk dibaca.
+  // Barisnya sendiri ikut terhapus lewat CASCADE saat transaksinya dihapus.
+  for (const t of listTransaksi({ pengajuanId: id })) await removeBuktiFiles(t.id);
 
   try {
     inTransaction(() => {
@@ -984,6 +1194,9 @@ export async function deleteTransaksi(
     const pasangan = getTransaksi(t.pasangan_id);
     if (pasangan && isLocked(pasangan.tanggal))
       return { ok: false, error: lockError(pasangan.tanggal) };
+    // Berkas buktinya dibuang lebih dulu, selagi barisnya masih bisa dibaca.
+    await removeBuktiFiles(id);
+    await removeBuktiFiles(t.pasangan_id);
     try {
       inTransaction(() => {
         run(`DELETE FROM transaksi WHERE id = ? OR id = ?`, id, t.pasangan_id);
@@ -1004,6 +1217,7 @@ export async function deleteTransaksi(
     };
   }
 
+  await removeBuktiFiles(id);
   run(`DELETE FROM transaksi WHERE id = ?`, id);
   logActivity(me, "hapus-transaksi", `#${id} ${t.jenis} ${fmtIdr(t.nominal)}`);
   await touchSession(me);

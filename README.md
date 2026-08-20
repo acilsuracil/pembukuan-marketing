@@ -106,9 +106,19 @@ npm run build && npm start
 1. **Minta dana** — `/pengajuan/baru`. Isi keterangan, nominal, rute (rekening
    penerima atau dompet), brand, platform, divisi. Panel merakit teks siap
    tempel untuk chat finance, jadi nomor rekening tidak pernah diketik ulang.
-2. **Dana cair** — buka pengajuannya, tekan **Catat pembayaran**. Dari sini baris
-   buku besar lahir sendiri: rute langsung jadi belanja, rute dompet jadi
-   top-up. Batal? **Batalkan pembayaran** menghapus baris yang ia buat.
+2. **Dana cair** — buka pengajuannya, lampirkan **bukti transfer** (tangkapan
+   layar mutasi bisa langsung ditempel `Ctrl/⌘ + V`), lalu tekan **Catat
+   pembayaran**. Dari sini baris buku besar lahir sendiri: rute langsung jadi
+   belanja, rute dompet jadi top-up. Batal? **Batalkan pembayaran** menghapus
+   baris yang ia buat beserta buktinya.
+
+   Buktinya **wajib**, dan itu bukan formalitas: dana cair adalah satu-satunya
+   titik di alur ini yang tidak bisa diperiksa ulang dari data lain — pengajuan
+   hanya menyatakan permintaan, dan begitu ditandai dibayar seluruh laporan
+   mempercayainya. Karena itu berkasnya divalidasi **sebelum** apa pun ditulis,
+   dan kalau semua unggahannya gagal, pencatatannya dibatalkan seluruhnya.
+   Bukti terakhir dari dana yang sudah cair juga tidak bisa dihapus — unggah
+   penggantinya dulu.
 3. **Input harian dompet** — `/belanja/harian`. Pilih tanggal + dompet, isi grid
    platform / akun iklan / brand / nominal, simpan sekaligus. Sisa saldo
    berjalan tampil sambil mengetik, dan turun di bawah batas minimum diberi
@@ -158,7 +168,8 @@ tombol. Owner bisa menyetel izin default tiap peran dan menimpanya per akun di
 
 ## Yang belum ada (fase berikutnya)
 
-- Bukti transfer (foto) — tabel `attachments` sudah ada, UI-nya belum
+- Bukti transfer di luar alur pengajuan (belanja harian & transfer belum menuntut
+  bukti — bisa dilampirkan menyusul dari halaman detail)
 - Alur pengajuan ubah/hapus untuk staff (tanpa izin `editBelanja`, staff belum
   punya jalan mengusulkan perbaikan)
 - Import CSV dari Google Spreadsheet yang dipakai sekarang

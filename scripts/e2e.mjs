@@ -70,9 +70,10 @@ async function submit(path, penanda, data) {
 
   const fd = new FormData();
   for (const [k, v] of Object.entries(fields)) fd.set(k, v);
+  const nilai = (x) => (x instanceof File ? x : String(x));
   for (const [k, v] of Object.entries(data)) {
-    if (Array.isArray(v)) for (const item of v) fd.append(k, String(item));
-    else fd.set(k, String(v));
+    if (Array.isArray(v)) for (const item of v) fd.append(k, nilai(item));
+    else fd.set(k, nilai(v));
   }
 
   const res = await fetch(BASE + path, {
@@ -89,6 +90,16 @@ async function submit(path, penanda, data) {
   const body = await res.text();
   return { status: res.status, location: res.headers.get("location"), body };
 }
+
+/**
+ * PNG 1x1 yang sah, dipakai sebagai bukti transfer palsu. Server memeriksa tipe
+ * dan ukurannya, bukan isinya — jadi ini cukup untuk menguji seluruh jalurnya.
+ */
+const PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==",
+  "base64",
+);
+const buktiPalsu = (nama = "bukti.png") => new File([PNG], nama, { type: "image/png" });
 
 const db = () => new DatabaseSync(DB, { readOnly: true });
 const one = (sql, ...p) => {
@@ -201,12 +212,30 @@ step("Pengajuan rute dompet, lalu tandai dana cair");
   checkIncludes("format untuk finance memuat rekening dompet", detail.body, "1234567890");
   checkIncludes("format memuat nominal", detail.body, rupiah(5000000));
 
+  // Bukti transfer wajib: tanpa lampiran, pencatatan harus ditolak utuh —
+  // tidak ada baris buku besar, status pengajuan tidak berubah.
+  const tanpaBukti = await submit(`/pengajuan/${pg.id}`, 'name="tanggal_bayar"', {
+    id: pg.id,
+    status: "dibayar",
+    tanggal_bayar: "2026-08-06",
+    nominal_cair: "",
+    no_ref: "TRF-001",
+  });
+  checkIncludes("cair tanpa bukti ditolak", tanpaBukti.body, "Lampirkan bukti transfernya");
+  check(
+    "status belum berubah",
+    one(`SELECT status FROM pengajuan WHERE id = ?`, pg.id).status,
+    "diajukan",
+  );
+  check("belum ada baris buku besar", one(`SELECT COUNT(*) AS n FROM transaksi`).n, 0);
+
   await submit(`/pengajuan/${pg.id}`, 'name="tanggal_bayar"', {
     id: pg.id,
     status: "dibayar",
     tanggal_bayar: "2026-08-06",
     nominal_cair: "",
     no_ref: "TRF-001",
+    bukti: [buktiPalsu("mutasi-jago.png")],
   });
 
   const after = one(`SELECT * FROM pengajuan WHERE id = ?`, pg.id);
@@ -216,6 +245,27 @@ step("Pengajuan rute dompet, lalu tandai dana cair");
   check("top-up tidak jadi biaya", tx.delta_biaya, 0);
   check("saldo Jago naik", one(`SELECT sisa FROM v_saldo_dompet WHERE id=?`, jago).sisa, 6000000);
   check("total biaya masih nol", one(`SELECT IFNULL(SUM(delta_biaya),0) AS v FROM v_transaksi`).v, 0);
+
+  const att = one(`SELECT * FROM attachments WHERE tx_id = ?`, tx.id);
+  check("bukti tersimpan di baris itu", att.orig_name, "mutasi-jago.png");
+  check("bukti tercatat sebagai PNG", att.mime, "image/png");
+
+  const berkas = await fetch(`${BASE}/api/bukti/${att.id}`, { headers: { cookie } });
+  check("bukti bisa dibuka lewat route ber-auth", berkas.status, 200);
+  check("tipe yang disajikan dari database", berkas.headers.get("content-type"), "image/png");
+  const tanpaSesi = await fetch(`${BASE}/api/bukti/${att.id}`);
+  check("bukti ditolak tanpa sesi", tanpaSesi.status, 401);
+
+  const detailBukti = await get(`/pengajuan/${pg.id}`);
+  checkIncludes("detail pengajuan menampilkan buktinya", detailBukti.body, `/api/bukti/${att.id}`);
+
+  // Bukti terakhir dari dana yang sudah cair tidak boleh dihapus — itu pintu
+  // belakang menuju keadaan yang justru dicegah aturan ini.
+  const hapusBukti = await submit(`/pengajuan/${pg.id}`, `value="${att.id}"`, {
+    id: att.id,
+  });
+  checkIncludes("bukti terakhir tidak bisa dihapus", hapusBukti.body, "bukti terakhir");
+  check("buktinya masih ada", one(`SELECT COUNT(*) AS n FROM attachments`).n, 1);
 }
 
 step("Input harian dompet: tiga baris sekaligus");
@@ -278,6 +328,7 @@ step("Belanja rute langsung dari pengajuan kedua");
     tanggal_bayar: "2026-08-14",
     nominal_cair: "",
     no_ref: "TRF-002",
+    bukti: [buktiPalsu("transfer-dewi.png"), buktiPalsu("chat-dewi.png")],
   });
 
   const tx = one(`SELECT * FROM v_transaksi WHERE pengajuan_id = ?`, pg.id);

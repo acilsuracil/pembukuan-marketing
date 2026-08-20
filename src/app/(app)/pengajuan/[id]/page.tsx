@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
+import Bukti from "@/components/Bukti";
 import CopyBox from "@/components/CopyBox";
 import PengajuanActions from "@/components/PengajuanActions";
 import StatusBadge from "@/components/StatusBadge";
@@ -14,7 +15,7 @@ import {
 } from "@/lib/format";
 import { rekLine } from "@/lib/opts";
 import { hasPerm } from "@/lib/policy";
-import { getPengajuan, listTransaksi } from "@/lib/queries";
+import { attachmentsOf, getPengajuan, listTransaksi } from "@/lib/queries";
 import { requireUser } from "@/lib/session";
 
 export default async function PengajuanDetailPage({
@@ -154,6 +155,19 @@ export default async function PengajuanDetailPage({
               </table>
             )}
           </section>
+
+          {/* Bukti menempel pada baris buku besarnya, bukan pada pengajuannya —
+              yang perlu dibuktikan adalah uang yang benar-benar pindah. */}
+          {rows.map((t) => (
+            <Bukti
+              key={t.id}
+              txId={t.id}
+              items={attachmentsOf(t.id)}
+              canUpload={hasPerm(me, "addBelanja")}
+              canDeleteAny={hasPerm(me, "deleteBelanja")}
+              currentUserId={me.id}
+            />
+          ))}
         </div>
 
         <div className="space-y-4">

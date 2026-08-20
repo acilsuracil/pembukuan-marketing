@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useActionState, useEffect } from "react";
+import { useActionState, useEffect, useState } from "react";
 import {
   cancelPembayaran,
   deletePengajuan,
@@ -9,6 +9,7 @@ import {
   type ActionState,
 } from "@/app/actions";
 import type { PengajuanStatus, Tujuan } from "@/lib/types";
+import BuktiInput from "./BuktiInput";
 import MoneyField from "./MoneyField";
 import { Alert, FormButton } from "./ui";
 
@@ -37,6 +38,10 @@ export default function PengajuanActions({
   const [statusState, doStatus] = useActionState(setPengajuanStatus, EMPTY);
   const [cancelState, doCancel] = useActionState(cancelPembayaran, EMPTY);
   const [delState, doDelete] = useActionState(deletePengajuan, EMPTY);
+
+  /** Jumlah bukti yang sudah terpasang, dan status pengecilan gambarnya. */
+  const [bukti, setBukti] = useState(0);
+  const [siapkanBukti, setSiapkanBukti] = useState(false);
 
   useEffect(() => {
     if (delState.ok) router.push("/pengajuan");
@@ -128,8 +133,33 @@ export default function PengajuanActions({
             />
           </div>
 
-          <FormButton className="btn btn-primary w-full">
-            Catat pembayaran
+          <div>
+            <label className="label" htmlFor="pay-bukti">
+              Bukti transfer{" "}
+              <span style={{ color: "var(--status-critical)" }}>wajib</span>
+            </label>
+            <BuktiInput id="pay-bukti" onChange={setBukti} onBusy={setSiapkanBukti} />
+            <p className="hint">
+              Tangkapan layar mutasi bisa langsung ditempel Ctrl/⌘ + V — tidak
+              perlu disimpan jadi berkas dulu.
+            </p>
+          </div>
+
+          {/*
+            Tombolnya mati selagi gambar dikecilkan: berkasnya belum masuk ke
+            input file, jadi formulir yang terkirim di sela itu akan berangkat
+            tanpa bukti dan ditolak server — kelihatannya seperti bug.
+          */}
+          <FormButton
+            className="btn btn-primary w-full"
+            disabled={bukti === 0 || siapkanBukti}
+            pendingLabel="Mencatat…"
+          >
+            {siapkanBukti
+              ? "Menyiapkan bukti…"
+              : bukti === 0
+                ? "Lampirkan bukti dulu"
+                : `Catat pembayaran + ${bukti} bukti`}
           </FormButton>
         </form>
       )}
