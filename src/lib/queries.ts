@@ -134,8 +134,6 @@ export interface TxFilter {
   noBrand?: boolean;
   q?: string;
   limit?: number;
-  /** Baris yang dilewati — hanya berlaku bersama `limit`. */
-  offset?: number;
   sort?: SortKey;
   dir?: SortDir;
 }
@@ -186,16 +184,9 @@ function orderClause(f: TxFilter) {
 
 export function listTransactions(f: TxFilter = {}): TxRow[] {
   const { sql, params } = whereClause(f);
-  // OFFSET hanya sah di SQLite kalau LIMIT ikut ditulis, jadi keduanya menempel
-  // pada syarat yang sama — offset tanpa limit dibiarkan tidak berpengaruh, bukan
-  // menghasilkan SQL yang gagal.
   return all<TxRow>(
     `SELECT * FROM tx_view ${sql} ${orderClause(f)}
-     ${
-       f.limit
-         ? `LIMIT ${Number(f.limit)} OFFSET ${Math.max(0, Number(f.offset) || 0)}`
-         : ""
-     }`,
+     ${f.limit ? `LIMIT ${Number(f.limit)}` : ""}`,
     ...params,
   );
 }
@@ -341,44 +332,18 @@ export function monthlyFlowsBetween(
   );
 }
 
-/**
- * Saldo dompet tepat sebelum sebuah bulan dimulai — yaitu saldo akhir bulan
- * sebelumnya, yang menjadi modal awal bulan itu.
- *
- * Selalu global, tidak pernah per brand: saldo dompet adalah satu kolam bersama,
- * jadi "saldo awal brand X" bukan angka yang punya arti di pembukuan ini.
- */
-export function openingBalance(month: string): number {
-  return (
-    one<{ v: number | null }>(
-      `SELECT SUM(delta_usdt) AS v FROM tx_view WHERE month < ?`,
-      month,
-    )?.v ?? 0
-  );
-}
-
 /** Saldo dompet di akhir tiap bulan — selalu global, bukan per brand. */
 export function runningBalance(
   months: number = 12,
 ): Array<{ month: string; balance: number }> {
-  const to = currentMonth();
-  return runningBalanceBetween(addMonths(to, -(months - 1)), to);
-}
-
-/**
- * Saldo akhir tiap bulan pada rentang tertentu.
- *
- * Dimulai dari saldo sebelum `from`, bukan dari nol — grafik saldo bulan-bulan
- * lampau harus memperlihatkan uang yang memang sudah ada di dompet saat itu,
- * bukan seolah pembukuannya baru dimulai di awal rentang.
- */
-export function runningBalanceBetween(
-  from: string,
-  to: string,
-): Array<{ month: string; balance: number }> {
-  const flows = monthlyFlowsBetween(from, to);
+  const flows = monthlyFlows(months);
   if (flows.length === 0) return [];
-  let acc = openingBalance(flows[0].month);
+  const opening =
+    one<{ v: number | null }>(
+      `SELECT SUM(delta_usdt) AS v FROM tx_view WHERE month < ?`,
+      flows[0].month,
+    )?.v ?? 0;
+  let acc = opening;
   return flows.map((f) => {
     acc += f.in_usdt - f.out_usdt;
     return { month: f.month, balance: acc };
@@ -710,13 +675,6 @@ export function incomeRates(): Array<{ date: string; rate: number }> {
      WHERE type = 'in' AND rate_idr IS NOT NULL
      ORDER BY date ASC, id ASC`,
   );
-}
-
-/** Bulan-bulan yang punya transaksi — untuk menandai periode kosong di pemilih. */
-export function monthsWithData(): string[] {
-  return all<{ month: string }>(
-    `SELECT DISTINCT month FROM tx_view ORDER BY month`,
-  ).map((r) => r.month);
 }
 
 export function firstMonth(): string | null {

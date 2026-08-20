@@ -5,26 +5,12 @@ const nf = (min: number, max: number) =>
   });
 
 const usdtFmt = nf(2, 2);
-const usdtExactFmt = nf(2, 6);
 const idrFmt = nf(0, 0);
 const rateFmt = nf(0, 0);
 
 export function fmtUsdt(v: number | null | undefined): string {
   if (v === null || v === undefined || Number.isNaN(v)) return "–";
   return `${usdtFmt.format(v)} USDT`;
-}
-
-/**
- * USDT sampai 6 desimal — presisi asli rantainya.
- *
- * Angka yang dibulatkan 2 desimal enak dibaca, tapi tidak bisa dicocokkan dengan
- * saldo dompet sungguhan yang berbunyi 465,283639. Saat selisih muncul, yang
- * pertama dibutuhkan justru angka utuhnya: tanpa itu tidak ada cara membedakan
- * beda pembulatan tampilan dari beda yang benar-benar ada di pembukuan.
- */
-export function fmtUsdtExact(v: number | null | undefined): string {
-  if (v === null || v === undefined || Number.isNaN(v)) return "–";
-  return `${usdtExactFmt.format(v)} USDT`;
 }
 
 export function fmtIdr(v: number | null | undefined): string {

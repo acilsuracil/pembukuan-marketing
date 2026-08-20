@@ -5,7 +5,7 @@ import BuktiPanel from "@/components/Bukti";
 import DeleteTxButton from "@/components/DeleteTxButton";
 import TxForm from "@/components/TxForm";
 import { Badge } from "@/components/ui";
-import { fmtDate, fmtIdr, fmtRate, fmtUsdt, fmtUsdtExact } from "@/lib/format";
+import { fmtDate, fmtIdr, fmtRate, fmtUsdt } from "@/lib/format";
 import { seriesVar } from "@/lib/palette";
 import { hasPerm, isLocked } from "@/lib/policy";
 import {
@@ -66,12 +66,12 @@ export default async function DetailTransaksiPage({
       ),
     ],
     ["Kategori", t.category_name ?? "—"],
-    ["Nominal", fmtUsdtExact(t.amount_usdt)],
+    ["Nominal", fmtUsdt(t.amount_usdt)],
     [
       "Fee agency",
       t.fee_pct > 0 ? (
         <>
-          {fmtUsdtExact(t.fee_pct_usdt)}{" "}
+          {fmtUsdt(t.fee_pct_usdt)}{" "}
           <span className="text-xs text-[var(--text-muted)]">
             ({t.fee_pct}% dari nominal)
           </span>
@@ -80,10 +80,10 @@ export default async function DetailTransaksiPage({
         "—"
       ),
     ],
-    ["Biaya jaringan", t.fee_usdt > 0 ? fmtUsdtExact(t.fee_usdt) : "—"],
+    ["Biaya jaringan", t.fee_usdt > 0 ? fmtUsdt(t.fee_usdt) : "—"],
     [
       "Arus kas",
-      `${t.type === "in" ? "+" : "−"}${fmtUsdtExact(t.flow_usdt)}`,
+      `${t.type === "in" ? "+" : "−"}${fmtUsdt(t.flow_usdt)}`,
     ],
     [
       "Kurs dipakai",
@@ -214,22 +214,11 @@ export default async function DetailTransaksiPage({
 
           <p className="mt-3 text-xs text-[var(--text-muted)]">
             Bukti transfernya menempel di porsi pertama (#{t.split_head_id}) dan
-            ditampilkan di setiap porsi.{" "}
-            {canEdit ? (
-              <>
-                <strong>Mengubah</strong> mengenai seluruh {siblings.length} porsi
-                sekaligus — nominal totalnya, pembagiannya, sampai brand mana saja
-                yang ikut, semuanya di satu formulir.
-              </>
-            ) : (
-              <>
-                <strong>Mengubah</strong> di sini hanya mengenai porsi ini, karena
-                pengajuan perubahan dicatat per porsi.
-              </>
-            )}{" "}
-            <strong>Menghapus</strong> membuang seluruh {siblings.length} porsi
-            sekaligus, karena menyisakan sebagian akan membuat pembukuannya mencatat
-            pembayaran yang lebih kecil dari kenyataan.
+            ditampilkan di setiap porsi. <strong>Mengubah</strong> di sini hanya
+            mengenai porsi ini — kalau pembagiannya yang salah, hapus lalu catat
+            ulang. <strong>Menghapus</strong> membuang seluruh {siblings.length}{" "}
+            porsi sekaligus, karena menyisakan sebagian akan membuat pembukuannya
+            mencatat pembayaran yang lebih kecil dari kenyataan.
           </p>
         </section>
       )}
@@ -237,11 +226,7 @@ export default async function DetailTransaksiPage({
       {editing ? (
         <section className="card p-4 sm:p-6">
           <h2 className="mb-4 text-sm font-semibold">
-            {canEdit
-              ? siblings.length > 1
-                ? `Ubah pembayaran — ${siblings.length} porsi sekaligus`
-                : "Ubah transaksi"
-              : "Ajukan perubahan"}
+            {canEdit ? "Ubah transaksi" : "Ajukan perubahan"}
           </h2>
           <TxForm
             categories={listCategories(true)}
@@ -249,7 +234,6 @@ export default async function DetailTransaksiPage({
             inRates={incomeRates()}
             initial={t}
             canEditDirectly={canEdit}
-            groupMembers={siblings}
           />
         </section>
       ) : (

@@ -2,9 +2,18 @@ import { todayISO } from "@/lib/format";
 import { isSortKey, listTransactions, type TxFilter } from "@/lib/queries";
 import { getUser } from "@/lib/session";
 
+// CSV standar (RFC 4180): delimiter koma, desimal titik, tanpa pemisah ribuan.
+// Format lama (delimiter ";" + desimal ",") bikin Excel yang list separator-nya
+// koma memecah tiap baris di tengah angka, dan semua ";" ikut jadi teks.
+const SEP = ",";
+
 function csvCell(v: unknown): string {
   const s = v === null || v === undefined ? "" : String(v);
-  return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  // Kutip kalau ada delimiter, tanda kutip, atau newline. Spasi di ujung juga
+  // dikutip supaya tidak dipotong saat dibuka ulang.
+  return /[",\r\n]/.test(s) || s !== s.trim()
+    ? `"${s.replace(/"/g, '""')}"`
+    : s;
 }
 
 export async function GET(request: Request) {
@@ -37,12 +46,11 @@ export async function GET(request: Request) {
     "Sumber kurs", "Nilai IDR", "Bukti", "Dicatat oleh", "Tx Hash",
   ];
 
-  // Delimiter titik-koma + desimal koma agar langsung terbaca Excel lokal ID.
   const num = (n: number | null, d = 2) =>
-    n === null ? "" : n.toFixed(d).replace(".", ",");
+    n === null || !Number.isFinite(n) ? "" : n.toFixed(d);
 
   const lines = [
-    header.join(";"),
+    header.join(SEP),
     ...rows.map((t) =>
       [
         t.date,
@@ -64,12 +72,14 @@ export async function GET(request: Request) {
         t.tx_hash,
       ]
         .map(csvCell)
-        .join(";"),
+        .join(SEP),
     ),
   ];
 
-  // BOM supaya Excel membaca UTF-8 dengan benar.
-  const body = `﻿${lines.join("\r\n")}\r\n`;
+  // Baris "sep=" bikin Excel memakai delimiter ini apa pun regional setting-nya
+  // (locale ID default-nya ";", jadi tanpa hint semua kolom nempel di kolom A).
+  // BOM di depan supaya Excel membaca UTF-8 dengan benar.
+  const body = `\ufeffsep=${SEP}\r\n${lines.join("\r\n")}\r\n`;
 
   return new Response(body, {
     headers: {

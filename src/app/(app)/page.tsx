@@ -1,30 +1,32 @@
 import Link from "next/link";
 import { connection } from "next/server";
 import BrandScope from "@/components/BrandScope";
-import PeriodScope from "@/components/PeriodScope";
 import BudgetMeters from "@/components/BudgetMeters";
 import StatTile from "@/components/StatTile";
 import TxTable from "@/components/TxTable";
 import BalanceChart from "@/components/charts/BalanceChart";
 import CashflowChart from "@/components/charts/CashflowChart";
 import CategoryBars from "@/components/charts/CategoryBars";
-import { fmtDate, fmtIdr, fmtRate, fmtUsdt, fmtUsdtExact } from "@/lib/format";
+import {
+  currentMonth,
+  fmtDate,
+  fmtIdr,
+  fmtRate,
+  fmtUsdt,
+  monthLabelLong,
+} from "@/lib/format";
 import {
   brandBudgetStatus,
   brandSpend,
   budgetStatus,
   categorySpend,
-  firstMonth,
   getSummary,
   listBrands,
   listTransactions,
-  monthlyFlowsBetween,
-  monthsWithData,
-  openingBalance,
-  runningBalanceBetween,
+  monthlyFlows,
+  runningBalance,
   type TxFilter,
 } from "@/lib/queries";
-import { chartMonths, parsePeriod, periodOptions } from "@/lib/period";
 import { hasPerm } from "@/lib/policy";
 import { requireUser } from "@/lib/session";
 
@@ -45,40 +47,20 @@ export default async function DashboardPage({
   const scoped = brandRaw ? brands.find((b) => String(b.id) === brandRaw) : undefined;
   const scope: TxFilter = scoped ? { brandId: scoped.id } : {};
 
-  const period = parsePeriod(sp.periode);
-  const periodScope: TxFilter = { ...scope, from: period.from, to: period.to };
-  const chart = chartMonths(period);
+  const month = currentMonth();
+  const monthScope: TxFilter = { ...scope, from: `${month}-01`, to: `${month}-31` };
 
   const s = getSummary(scope);
-  // Rentang grafik mengikuti periode, jadi membuka bulan lampau memperlihatkan
-  // 12 bulan yang berakhir di sana — bukan grafik yang ujungnya selalu hari ini.
-  const flows = monthlyFlowsBetween(chart.from, chart.to, scope);
-  const balance = runningBalanceBetween(chart.from, chart.to);
-  const spendByCategory = categorySpend(periodScope);
-  const spendByBrand = brandSpend({ from: period.from, to: period.to });
-  const recent = listTransactions({ ...periodScope, limit: 8 });
+  const flows = monthlyFlows(12, scope);
+  const balance = runningBalance(12);
+  const spendByCategory = categorySpend(monthScope);
+  const spendByBrand = brandSpend({ from: `${month}-01`, to: `${month}-31` });
+  const recent = listTransactions({ ...scope, limit: 8 });
 
-  // Arus periode dijumlahkan dari bulan-bulan di dalamnya, bukan diambil dari
-  // elemen terakhir grafik: untuk tampilan tahunan yang benar adalah total 12
-  // bulannya, dan untuk tampilan bulanan hasilnya tetap sama.
-  const inPeriod = monthlyFlowsBetween(period.firstMonth, period.lastMonth, scope);
-  const flowIn = inPeriod.reduce((n, f) => n + f.in_usdt, 0);
-  const flowOut = inPeriod.reduce((n, f) => n + f.out_usdt, 0);
-  const net = flowIn - flowOut;
-
-  // Saldo awal periode = saldo akhir sebelum periode itu dimulai. Saldo dompet
-  // adalah kolam bersama, jadi angkanya hanya punya arti saat tidak disaring
-  // per brand.
-  const opening = scoped ? null : openingBalance(period.firstMonth);
-  const closing = opening === null ? null : opening + net;
-
-  // Budget dipasang per bulan, jadi tidak ada padanannya untuk tampilan tahunan.
-  const monthly = period.kind === "month" && !scoped;
-  const budgets = monthly ? budgetStatus(period.key) : [];
-  const brandBudgets = monthly ? brandBudgetStatus(period.key) : [];
-
-  const periodPick = periodOptions(firstMonth());
-  const filledMonths = monthsWithData();
+  const monthFlow = flows[flows.length - 1];
+  const net = monthFlow ? monthFlow.in_usdt - monthFlow.out_usdt : 0;
+  const budgets = scoped ? [] : budgetStatus(month);
+  const brandBudgets = scoped ? [] : brandBudgetStatus(month);
 
   return (
     <div className="space-y-5">
@@ -87,20 +69,11 @@ export default async function DashboardPage({
           <h1 className="text-xl font-semibold tracking-tight">Dashboard</h1>
           <p className="mt-0.5 text-sm text-[var(--text-muted)]">
             {scoped ? `Brand ${scoped.name}` : "Semua brand"} ·{" "}
-            {period.label}
+            {monthLabelLong(month)}
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-2">
-          <PeriodScope
-            months={periodPick.months}
-            years={periodPick.years}
-            filled={filledMonths}
-            value={period.key}
-            brand={brandRaw}
-          />
-          {brands.length > 0 && (
-            <BrandScope brands={brands} value={brandRaw} periode={period.key} />
-          )}
+          {brands.length > 0 && <BrandScope brands={brands} value={brandRaw} />}
           <Link href="/transaksi/baru" className="btn btn-primary">
             + Catat transaksi
           </Link>
@@ -134,15 +107,10 @@ export default async function DashboardPage({
                 hero
                 label="Saldo dompet (seluruh brand)"
                 value={fmtUsdt(s.balanceUsdt)}
-                // Angka utuhnya ikut ditulis. Nilai yang dibulatkan 2 desimal
-                // tidak bisa dicocokkan dengan saldo dompet sungguhan yang
-                // berbunyi 6 desimal — dan saat ada selisih, itu justru
-                // pemeriksaan pertama yang dibutuhkan.
                 sub={
-                  `Tepatnya ${fmtUsdtExact(s.balanceUsdt)}` +
-                  (s.balanceIdr === null
-                    ? " · belum ada kurs pemasukan"
-                    : ` · ≈ ${fmtIdr(s.balanceIdr)} pada kurs terakhir`)
+                  s.balanceIdr === null
+                    ? "Belum ada kurs pemasukan"
+                    : `≈ ${fmtIdr(s.balanceIdr)} pada kurs pemasukan terakhir`
                 }
               />
             </div>
@@ -163,128 +131,74 @@ export default async function DashboardPage({
           </div>
 
           <div className="grid gap-3 sm:grid-cols-3">
-            {/* Kartu-kartu ini sepanjang waktu, bukan bulan yang tertulis di
-                judul halaman. Periodenya ditulis di labelnya sendiri: tanpa itu,
-                "Agustus 2026" di atas membuat total seumur hidup terbaca sebagai
-                angka bulan ini, dan arus bersih yang negatif jadi tampak seperti
-                saldo yang minus. */}
             <StatTile
-              label={
-                scoped ? `Masuk — ${scoped.name}` : "Total uang masuk · sejak awal"
-              }
+              label={scoped ? `Masuk — ${scoped.name}` : "Total uang masuk"}
               value={fmtUsdt(s.inUsdt)}
               sub={`Modal ${fmtIdr(s.inIdr)}`}
             />
             <StatTile
-              label={
-                scoped
-                  ? `Pemakaian — ${scoped.name}`
-                  : "Total uang keluar · sejak awal"
-              }
+              label={scoped ? `Pemakaian — ${scoped.name}` : "Total uang keluar"}
               value={fmtUsdt(s.outUsdt)}
               sub={`Terpakai ${fmtIdr(s.outIdr)}`}
             />
             <StatTile
-              label={`Arus bersih ${period.label}`}
+              label={`Arus bersih ${monthLabelLong(month)}`}
               value={`${net >= 0 ? "+" : "−"}${fmtUsdt(Math.abs(net))}`}
-              sub={`Masuk ${fmtUsdt(flowIn)} · keluar ${fmtUsdt(flowOut)}`}
+              sub={
+                monthFlow
+                  ? `Masuk ${fmtUsdt(monthFlow.in_usdt)} · keluar ${fmtUsdt(
+                      monthFlow.out_usdt,
+                    )}`
+                  : undefined
+              }
             />
           </div>
 
-          {/* Arus bersih adalah selisih masuk-keluar bulan ini, bukan saldo — dan
-              bulan yang belum ada top-up-nya pasti negatif sebesar seluruh
-              pengeluarannya. Tanpa saldo awal di sebelahnya, angka minus itu
-              terbaca seperti dompet yang kehabisan uang, padahal saldo akhir
-              bulan lalu memang terbawa. Rangkaiannya ditulis terbuka di sini
-              supaya asal-usulnya tidak perlu ditebak. */}
-          {opening !== null && closing !== null && (
-            <section className="card p-4">
-              <div className="text-xs text-[var(--text-secondary)]">
-                Perjalanan saldo {period.label}
-              </div>
-              <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
-                <span className="text-[var(--text-muted)]">Saldo awal</span>
-                <strong className="tnum">{fmtUsdt(opening)}</strong>
-
-                <span className="text-[var(--text-muted)]">+ masuk</span>
-                <strong className="tnum" style={{ color: "var(--flow-in)" }}>
-                  {fmtUsdt(flowIn)}
-                </strong>
-
-                <span className="text-[var(--text-muted)]">− keluar</span>
-                <strong className="tnum" style={{ color: "var(--flow-out)" }}>
-                  {fmtUsdt(flowOut)}
-                </strong>
-
-                <span className="text-[var(--text-muted)]">=</span>
-                <strong className="tnum">Saldo akhir {fmtUsdt(closing)}</strong>
-              </div>
-              <p className="mt-1.5 text-xs text-[var(--text-muted)]">
-                Saldo awal {period.label} adalah saldo akhir{" "}
-                {period.kind === "year" ? "tahun" : "bulan"} sebelumnya — uangnya
-                terbawa, tidak dihitung ulang dari nol.
-              </p>
-            </section>
-          )}
-
-          <CashflowChart
-            data={flows}
-            periodLabel={
-              period.kind === "year"
-                ? `12 bulan ${period.key}`
-                : `12 bulan sampai ${period.label}`
-            }
-          />
+          <CashflowChart data={flows} />
 
           {scoped ? (
             <CategoryBars
               data={spendByCategory}
               title={`Pengeluaran ${scoped.name} per kategori`}
-              subtitle={`Realisasi ${period.label}`}
+              subtitle={`Realisasi ${monthLabelLong(month)}`}
             />
           ) : (
             <div className="grid gap-4 lg:grid-cols-2">
               <CategoryBars
                 data={spendByBrand}
                 title="Pemakaian per brand"
-                subtitle={`Realisasi ${period.label}`}
+                subtitle={`Realisasi ${monthLabelLong(month)}`}
               />
               <CategoryBars
                 data={spendByCategory}
                 title="Pengeluaran per kategori"
-                subtitle={`Realisasi ${period.label}`}
+                subtitle={`Realisasi ${monthLabelLong(month)}`}
               />
             </div>
           )}
 
-          {/* Budget dipasang per bulan. Pada tampilan tahunan meternya sengaja
-              tidak ditampilkan sama sekali — bukan dikosongkan: meter kosong
-              terbaca seolah budgetnya belum diatur, padahal budgetnya ada dan
-              hanya tidak punya arti untuk rentang setahun. */}
-          <div className={monthly ? "grid gap-4 lg:grid-cols-2" : ""}>
+          <div className="grid gap-4 lg:grid-cols-2">
             <BalanceChart data={balance} rate={s.lastRate} />
-            {monthly && (
-              <BudgetMeters
-                rows={brandBudgets.length > 0 ? brandBudgets : budgets}
-                periodLabel={period.label}
-                title={
-                  brandBudgets.length > 0 ? "Budget per brand" : "Budget per kategori"
-                }
-                manageHref={
-                  brandBudgets.length > 0
-                    ? "/brand"
-                    : hasPerm(user, "manageCategory")
-                      ? "/kategori"
-                      : undefined
-                }
-              />
-            )}
+            <BudgetMeters
+              rows={brandBudgets.length > 0 ? brandBudgets : budgets}
+              periodLabel={monthLabelLong(month)}
+              title={
+                brandBudgets.length > 0 ? "Budget per brand" : "Budget per kategori"
+              }
+              manageHref={
+                brandBudgets.length > 0
+                  ? "/brand"
+                  : hasPerm(user, "manageCategory")
+                    ? "/kategori"
+                    : undefined
+              }
+            />
           </div>
 
           {brandBudgets.length > 0 && budgets.length > 0 && (
             <BudgetMeters
               rows={budgets}
-              periodLabel={period.label}
+              periodLabel={monthLabelLong(month)}
               title="Budget per kategori"
               manageHref={hasPerm(user, "manageCategory") ? "/kategori" : undefined}
             />
@@ -292,16 +206,9 @@ export default async function DashboardPage({
 
           <section className="card">
             <div className="flex items-center justify-between gap-3 border-b border-[var(--hairline)] px-4 py-3">
-              <h2 className="text-sm font-semibold">
-                Transaksi terakhir · {period.label}
-              </h2>
-              {/* Daftarnya sudah disaring ke periode ini, jadi tautannya membawa
-                  saringan yang sama — kalau tidak, "lihat semua" akan membuka
-                  daftar yang isinya berbeda dari yang barusan dilihat. */}
+              <h2 className="text-sm font-semibold">Transaksi terakhir</h2>
               <Link
-                href={`/transaksi?from=${period.from}&to=${period.to}${
-                  scoped ? `&brand=${scoped.id}` : ""
-                }`}
+                href={scoped ? `/transaksi?brand=${scoped.id}` : "/transaksi"}
                 className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)]"
               >
                 Lihat semua →

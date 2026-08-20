@@ -6,25 +6,16 @@ import { useActionState, useEffect, useMemo, useState } from "react";
 import { useFormStatus } from "react-dom";
 import {
   createTransaction,
-  updateSplitGroup,
   updateTransaction,
   type ActionState,
 } from "@/app/actions";
 import { fmtIdr, fmtRate, fmtUsdt, todayISO } from "@/lib/format";
-import { fromMicro, toMicro } from "@/lib/split";
 import type { Brand, Category, TxRow } from "@/lib/types";
 import BrandSplit from "./BrandSplit";
 import BuktiInput from "./BuktiInput";
-import DateField from "./DateField";
 import { blurOnWheel } from "./ui";
 
 const EMPTY: ActionState = { ok: false };
-
-/**
- * Biaya jaringan bawaan untuk uang keluar. Sengaja teks, bukan angka, karena
- * kolomnya dikemudikan sebagai teks — "1.5" dan 1.5 tidak sama bagi input.
- */
-const DEFAULT_FEE_OUT = "1.5";
 
 function SubmitButton({ label, busy }: { label: string; busy?: boolean }) {
   const { pending } = useFormStatus();
@@ -41,7 +32,6 @@ export default function TxForm({
   inRates,
   initial,
   canEditDirectly,
-  groupMembers,
 }: {
   categories: Category[];
   brands: Brand[];
@@ -50,76 +40,20 @@ export default function TxForm({
   initial?: TxRow;
   /** Punya izin "edit"; kalau tidak, perubahan jadi pengajuan. */
   canEditDirectly: boolean;
-  /**
-   * Seluruh porsi dari pembayaran yang dibagi, terurut. Kehadirannya mengubah
-   * formulir jadi mengubah **satu grup sekaligus**, bukan satu porsi.
-   */
-  groupMembers?: TxRow[];
 }) {
   const router = useRouter();
   const editing = Boolean(initial);
   const needsRequest = editing && !canEditDirectly;
 
-  /**
-   * Ubah-grup hanya untuk pemegang izin ubah langsung. Payload pengajuan berisi
-   * satu brand, jadi perubahan seluruh grup tidak bisa diwakili olehnya —
-   * pemegang izin terbatas tetap mengajukan per porsi seperti sebelumnya.
-   */
-  const group =
-    editing && canEditDirectly && groupMembers && groupMembers.length > 1
-      ? groupMembers
-      : null;
-
   const [state, formAction] = useActionState(
-    group ? updateSplitGroup : editing ? updateTransaction : createTransaction,
+    editing ? updateTransaction : createTransaction,
     EMPTY,
   );
 
-  /**
-   * Saat mengubah grup, kolom Nominal berisi **total pembayarannya**, bukan
-   * nominal satu porsi — porsinya diatur di blok brand di bawahnya.
-   *
-   * Dijumlahkan lewat satuan terkecil, bukan penjumlahan float biasa: 150,29 +
-   * 253,21 bisa menghasilkan 403,49999999999994, dan angka itu akan muncul apa
-   * adanya di kolom nominal begitu formulirnya dibuka.
-   */
-  const groupSum = group
-    ? {
-        amount: fromMicro(
-          group.reduce((n, m) => n + toMicro(m.amount_usdt), 0),
-        ),
-        fee: fromMicro(group.reduce((n, m) => n + toMicro(m.fee_usdt), 0)),
-      }
-    : null;
-
   const [type, setType] = useState<"in" | "out">(initial?.type ?? "out");
   const [date, setDate] = useState(initial?.date ?? todayISO());
-  const [amount, setAmount] = useState(
-    groupSum ? String(groupSum.amount) : String(initial?.amount_usdt ?? ""),
-  );
-
-  /**
-   * Biaya jaringan pengeluaran hampir selalu sebesar ini, jadi kolomnya
-   * terisi sendiri. Mengetik angka yang sama puluhan kali sehari adalah kerja
-   * yang tidak perlu — dan yang diketik berulang justru paling mudah salah.
-   */
-  const [fee, setFee] = useState(
-    // Saat mengubah transaksi lama, yang tampil harus nilai tersimpannya apa
-    // adanya. Menaruh nilai bawaan di sini akan diam-diam menimpa biaya yang
-    // sudah benar begitu formulirnya dibuka.
-    groupSum
-      ? String(groupSum.fee)
-      : editing
-        ? String(initial!.fee_usdt ?? "")
-        : DEFAULT_FEE_OUT,
-  );
-  /**
-   * Sudah disentuh orangnya? Selagi belum, kolomnya mengikuti jenis transaksi:
-   * terisi untuk uang keluar, kosong untuk uang masuk. Begitu diketik — termasuk
-   * dikosongkan — kolomnya berhenti berubah sendiri, jadi menghapus biaya lalu
-   * berganti jenis tidak membuat angkanya muncul lagi.
-   */
-  const [feeTouched, setFeeTouched] = useState(false);
+  const [amount, setAmount] = useState(String(initial?.amount_usdt ?? ""));
+  const [fee, setFee] = useState(String(initial?.fee_usdt ?? ""));
   const [feePct, setFeePct] = useState(
     initial?.fee_pct ? String(initial.fee_pct) : "",
   );
@@ -147,18 +81,6 @@ export default function TxForm({
     return found;
   }, [inRates, date]);
 
-  /**
-   * Biaya jaringan bawaan hanya berlaku untuk uang keluar.
-   *
-   * Pada uang masuk, biaya justru DIPOTONG dari nominal — mengisinya 1,5 diam-diam
-   * akan mengurangi jumlah yang tercatat masuk, dan itu jenis kesalahan yang tidak
-   * terlihat sampai saldonya tidak cocok berbulan-bulan kemudian.
-   */
-  function changeType(next: "in" | "out") {
-    setType(next);
-    if (!editing && !feeTouched) setFee(next === "out" ? DEFAULT_FEE_OUT : "");
-  }
-
   const catOptions = categories.filter((c) => c.kind === type);
   const amountNum = Number(amount.replace(",", ".")) || 0;
   const feeNum = Number(fee.replace(",", ".")) || 0;
@@ -174,11 +96,7 @@ export default function TxForm({
 
   return (
     <form action={formAction} className="space-y-5">
-      {group ? (
-        <input type="hidden" name="split_group" value={group[0].split_group ?? ""} />
-      ) : (
-        editing && <input type="hidden" name="id" value={initial!.id} />
-      )}
+      {editing && <input type="hidden" name="id" value={initial!.id} />}
 
       {state.error && (
         <p
@@ -242,7 +160,7 @@ export default function TxForm({
                 name="type"
                 value={o.v}
                 checked={type === o.v}
-                onChange={() => changeType(o.v)}
+                onChange={() => setType(o.v)}
                 className="sr-only"
               />
               <span className="flex items-center gap-1.5 text-sm font-medium">
@@ -264,11 +182,12 @@ export default function TxForm({
           <label className="label" htmlFor="date">
             Tanggal
           </label>
-          <DateField
+          <input
             id="date"
             name="date"
+            type="date"
             required
-            width="w-full"
+            className="field"
             value={date}
             onChange={(e) => setDate(e.target.value)}
           />
@@ -279,7 +198,7 @@ export default function TxForm({
             grupnya — termasuk baris-baris yang tidak sedang dibuka — dan itu
             tidak bisa diwakili oleh satu pengajuan perubahan. Ubahan di sini
             berlaku untuk satu porsi saja; lihat catatan di halaman detail. */}
-        {group ? null : editing ? (
+        {editing ? (
           <div>
             <label className="label" htmlFor="brand_id">
               Brand{" "}
@@ -311,7 +230,15 @@ export default function TxForm({
                 : "Top-up biasanya masuk kolam bersama — isi hanya kalau memang titipan brand tertentu."}
             </p>
           </div>
-        ) : null}
+        ) : (
+          <div className="sm:col-span-2">
+            <BrandSplit
+              brands={brands}
+              amount={amountNum}
+              required={type === "out"}
+            />
+          </div>
+        )}
 
         <div>
           <label className="label" htmlFor="category_id">
@@ -356,28 +283,6 @@ export default function TxForm({
           />
         </div>
 
-        {/* Diletakkan SETELAH Nominal, bukan sebelumnya. Porsi tiap brand
-            dihitung dari nominal transaksinya, jadi menaruhnya lebih dulu
-            berarti orang menemui kolom porsi yang terkunci 0,00 beserta
-            peringatan merah sebelum ada apa pun untuk dibagi. */}
-        {/* Blok yang sama dipakai saat mencatat baru maupun saat mengubah
-            seluruh grup. Bedanya cuma porsi awalnya: yang sudah tercatat dimuat
-            apa adanya, jadi membuka formulir tidak mengubah angka apa pun sampai
-            benar-benar disunting. */}
-        {(!editing || group) && (
-          <div className="sm:col-span-2">
-            <BrandSplit
-              brands={brands}
-              amount={amountNum}
-              required={type === "out"}
-              initialShares={group?.map((m) => ({
-                brandId: m.brand_id as number,
-                amount: m.amount_usdt,
-              }))}
-            />
-          </div>
-        )}
-
         <div>
           <label className="label" htmlFor="fee_usdt">
             Biaya jaringan (USDT){" "}
@@ -394,18 +299,9 @@ export default function TxForm({
             placeholder="0"
             className="field tnum"
             value={fee}
-            onChange={(e) => {
-              setFee(e.target.value);
-              setFeeTouched(true);
-            }}
+            onChange={(e) => setFee(e.target.value)}
           />
           <p className="hint">
-            {!editing && !feeTouched && type === "out" && (
-              <>
-                Terisi {DEFAULT_FEE_OUT} karena kebanyakan transfer segitu — hapus
-                kalau transaksi ini memang tanpa biaya.{" "}
-              </>
-            )}
             {type === "in"
               ? "Dipotong dari nominal — yang dicatat masuk adalah nominal dikurangi fee."
               : "Ditambahkan ke nominal — total yang keluar dari dompet."}
