@@ -74,6 +74,98 @@ function promoteFirstOwner(db: DatabaseSync) {
   if (first) db.prepare(`UPDATE users SET role = 'owner' WHERE id = ?`).run(first.id);
 }
 
+/**
+ * Menambah jenis `transfer_keluar` / `transfer_masuk` pada pembukuan yang sudah
+ * berjalan.
+ *
+ * CHECK constraint tidak bisa diubah lewat ALTER TABLE di SQLite, jadi tabelnya
+ * dibangun ulang. Yang penting dijaga di sini: `attachments` mengacu ke tabel
+ * `transaksi` **berdasarkan nama**, sehingga tautannya utuh kembali setelah
+ * rename — dan indeks ikut terbuang bersama tabel lama, jadi dibuat ulang.
+ */
+function upgradeTransaksiJenis(db: DatabaseSync) {
+  const ddl = (
+    db
+      .prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='transaksi'`)
+      .get() as { sql?: string } | undefined
+  )?.sql;
+  if (!ddl || ddl.includes("transfer_keluar")) return;
+
+  db.exec("PRAGMA foreign_keys = OFF");
+  db.exec("BEGIN");
+  try {
+    db.exec(`
+      -- View mengacu ke transaksi; selama masih ada, tabelnya tidak bisa
+      -- dibuang. Keduanya dibuat ulang tepat setelah migrasi, di migrate().
+      DROP VIEW IF EXISTS v_saldo_dompet;
+      DROP VIEW IF EXISTS v_transaksi;
+
+      CREATE TABLE transaksi_migrated (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        tanggal       TEXT    NOT NULL,
+        jenis         TEXT    NOT NULL
+                      CHECK (jenis IN ('topup','belanja','refund','biaya_dompet','koreksi',
+                                       'transfer_keluar','transfer_masuk')),
+        nominal       INTEGER NOT NULL CHECK (nominal > 0),
+        arah          INTEGER NOT NULL DEFAULT 1 CHECK (arah IN (-1, 1)),
+        sumber        TEXT CHECK (sumber IS NULL OR sumber IN ('finance','dompet')),
+        dompet_id     INTEGER REFERENCES dompet(id)     ON DELETE SET NULL,
+        divisi_id     INTEGER REFERENCES divisi(id)     ON DELETE SET NULL,
+        platform_id   INTEGER REFERENCES platform(id)   ON DELETE SET NULL,
+        brand_id      INTEGER REFERENCES brand(id)      ON DELETE SET NULL,
+        akun_iklan_id INTEGER REFERENCES akun_iklan(id) ON DELETE SET NULL,
+        penerima_id   INTEGER REFERENCES penerima(id)   ON DELETE SET NULL,
+        pengajuan_id  INTEGER REFERENCES pengajuan(id)  ON DELETE SET NULL,
+        keterangan    TEXT    NOT NULL DEFAULT '',
+        no_ref        TEXT    NOT NULL DEFAULT '',
+        split_group   TEXT,
+        pasangan_id   INTEGER REFERENCES transaksi(id)  ON DELETE SET NULL,
+        created_by    INTEGER REFERENCES users(id)      ON DELETE SET NULL,
+        created_at    TEXT    NOT NULL,
+        updated_at    TEXT,
+
+        CHECK (jenis <> 'belanja'
+               OR (sumber IS NOT NULL AND sumber IN ('finance','dompet'))),
+        CHECK (jenis =  'belanja' OR sumber IS NULL),
+        CHECK (NOT (jenis = 'belanja' AND sumber = 'dompet' AND dompet_id IS NULL)),
+        CHECK (jenis <> 'topup'           OR dompet_id IS NOT NULL),
+        CHECK (jenis <> 'biaya_dompet'    OR dompet_id IS NOT NULL),
+        CHECK (jenis <> 'koreksi'         OR dompet_id IS NOT NULL),
+        CHECK (jenis <> 'transfer_keluar' OR dompet_id IS NOT NULL),
+        CHECK (jenis <> 'transfer_masuk'  OR dompet_id IS NOT NULL)
+      );
+
+      INSERT INTO transaksi_migrated
+        (id, tanggal, jenis, nominal, arah, sumber, dompet_id, divisi_id,
+         platform_id, brand_id, akun_iklan_id, penerima_id, pengajuan_id,
+         keterangan, no_ref, split_group, created_by, created_at, updated_at)
+      SELECT
+         id, tanggal, jenis, nominal, arah, sumber, dompet_id, divisi_id,
+         platform_id, brand_id, akun_iklan_id, penerima_id, pengajuan_id,
+         keterangan, no_ref, split_group, created_by, created_at, updated_at
+      FROM transaksi;
+
+      DROP TABLE transaksi;
+      ALTER TABLE transaksi_migrated RENAME TO transaksi;
+
+      CREATE INDEX IF NOT EXISTS idx_tr_tanggal  ON transaksi (tanggal DESC, id DESC);
+      CREATE INDEX IF NOT EXISTS idx_tr_jenis    ON transaksi (jenis, tanggal DESC, id DESC);
+      CREATE INDEX IF NOT EXISTS idx_tr_divisi   ON transaksi (divisi_id);
+      CREATE INDEX IF NOT EXISTS idx_tr_platform ON transaksi (platform_id);
+      CREATE INDEX IF NOT EXISTS idx_tr_brand    ON transaksi (brand_id);
+      CREATE INDEX IF NOT EXISTS idx_tr_dompet   ON transaksi (dompet_id, tanggal, id);
+      CREATE INDEX IF NOT EXISTS idx_tr_pengaju  ON transaksi (pengajuan_id);
+      CREATE INDEX IF NOT EXISTS idx_tr_pasangan ON transaksi (pasangan_id);
+    `);
+    db.exec("COMMIT");
+  } catch (e) {
+    db.exec("ROLLBACK");
+    throw e;
+  } finally {
+    db.exec("PRAGMA foreign_keys = ON");
+  }
+}
+
 /*
  * Seluruh nominal disimpan INTEGER rupiah utuh, tanpa sen.
  *
@@ -219,7 +311,8 @@ function migrate(db: DatabaseSync) {
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
       tanggal       TEXT    NOT NULL,
       jenis         TEXT    NOT NULL
-                    CHECK (jenis IN ('topup','belanja','refund','biaya_dompet','koreksi')),
+                    CHECK (jenis IN ('topup','belanja','refund','biaya_dompet','koreksi',
+                                     'transfer_keluar','transfer_masuk')),
       nominal       INTEGER NOT NULL CHECK (nominal > 0),
       -- Hanya dipakai 'koreksi': +1 menambah saldo, -1 menguranginya.
       arah          INTEGER NOT NULL DEFAULT 1 CHECK (arah IN (-1, 1)),
@@ -238,6 +331,14 @@ function migrate(db: DatabaseSync) {
       -- Satu pembayaran yang dipakai beberapa brand dicatat sebagai beberapa
       -- baris; kolom ini yang mengikat pecahannya. NULL = transaksi biasa.
       split_group   TEXT,
+      -- Sisi lain dari sebuah pindah saldo antar-dompet.
+      --
+      -- Pindah saldo dicatat sebagai DUA baris — keluar dari dompet asal, masuk
+      -- ke dompet tujuan — bukan satu baris yang menyentuh dua dompet. Alasannya
+      -- sama dengan yang membuat saldo bisa dipercaya: setiap baris milik tepat
+      -- satu dompet, jadi seluruh perhitungan saldo, mutasi, dan opname tetap
+      -- benar tanpa diubah sedikit pun. NULL = bukan bagian dari transfer.
+      pasangan_id   INTEGER REFERENCES transaksi(id) ON DELETE SET NULL,
       created_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
       created_at    TEXT    NOT NULL,
       updated_at    TEXT,
@@ -253,9 +354,11 @@ function migrate(db: DatabaseSync) {
              OR (sumber IS NOT NULL AND sumber IN ('finance','dompet'))),
       CHECK (jenis =  'belanja' OR sumber IS NULL),
       CHECK (NOT (jenis = 'belanja' AND sumber = 'dompet' AND dompet_id IS NULL)),
-      CHECK (jenis <> 'topup'        OR dompet_id IS NOT NULL),
-      CHECK (jenis <> 'biaya_dompet' OR dompet_id IS NOT NULL),
-      CHECK (jenis <> 'koreksi'      OR dompet_id IS NOT NULL)
+      CHECK (jenis <> 'topup'           OR dompet_id IS NOT NULL),
+      CHECK (jenis <> 'biaya_dompet'    OR dompet_id IS NOT NULL),
+      CHECK (jenis <> 'koreksi'         OR dompet_id IS NOT NULL),
+      CHECK (jenis <> 'transfer_keluar' OR dompet_id IS NOT NULL),
+      CHECK (jenis <> 'transfer_masuk'  OR dompet_id IS NOT NULL)
     );
 
     CREATE TABLE IF NOT EXISTS dompet_opname (
@@ -311,6 +414,12 @@ function migrate(db: DatabaseSync) {
   addColumn(db, "users", "perms", "TEXT");
   promoteFirstOwner(db);
 
+  // Urutannya penting: indeks pada pasangan_id dibuat **setelah** tabelnya
+  // dibangun ulang, karena pembukuan yang sudah berjalan belum punya kolomnya.
+  upgradeTransaksiJenis(db);
+  addColumn(db, "transaksi", "pasangan_id", "INTEGER REFERENCES transaksi(id)");
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_tr_pasangan ON transaksi (pasangan_id)`);
+
   db.exec(`
     /*
      * Dua kolom turunan inilah seluruh aturan pembukuan ini:
@@ -329,7 +438,11 @@ function migrate(db: DatabaseSync) {
       t.id, t.tanggal, t.jenis, t.nominal, t.arah, t.sumber,
       t.dompet_id, t.divisi_id, t.platform_id, t.brand_id, t.akun_iklan_id,
       t.penerima_id, t.pengajuan_id, t.keterangan, t.no_ref, t.split_group,
-      t.created_by, t.created_at, t.updated_at,
+      t.pasangan_id, t.created_by, t.created_at, t.updated_at,
+      -- Dompet di sisi lain sebuah pindah saldo, supaya satu baris mutasi bisa
+      -- menyebut ke/dari mana tanpa perlu dicari lagi di tabelnya.
+      (SELECT p2.name FROM transaksi p JOIN dompet p2 ON p2.id = p.dompet_id
+        WHERE p.id = t.pasangan_id) AS pasangan_dompet_name,
       d.name       AS divisi_name,
       d.color_slot AS divisi_slot,
       p.name       AS platform_name,
@@ -344,13 +457,18 @@ function migrate(db: DatabaseSync) {
       u.username   AS created_by_name,
       substr(t.tanggal, 1, 7) AS bulan,
       CASE t.jenis
-        WHEN 'topup'        THEN  t.nominal
-        WHEN 'belanja'      THEN CASE WHEN t.sumber = 'dompet' THEN -t.nominal ELSE 0 END
-        WHEN 'refund'       THEN CASE WHEN t.dompet_id IS NOT NULL THEN t.nominal ELSE 0 END
-        WHEN 'biaya_dompet' THEN -t.nominal
-        WHEN 'koreksi'      THEN  t.arah * t.nominal
+        WHEN 'topup'           THEN  t.nominal
+        WHEN 'belanja'         THEN CASE WHEN t.sumber = 'dompet' THEN -t.nominal ELSE 0 END
+        WHEN 'refund'          THEN CASE WHEN t.dompet_id IS NOT NULL THEN t.nominal ELSE 0 END
+        WHEN 'biaya_dompet'    THEN -t.nominal
+        WHEN 'koreksi'         THEN  t.arah * t.nominal
+        WHEN 'transfer_keluar' THEN -t.nominal
+        WHEN 'transfer_masuk'  THEN  t.nominal
         ELSE 0
       END AS delta_saldo,
+      -- Pindah saldo antar-dompet tidak muncul di sini sama sekali: uangnya
+      -- belum dipakai, cuma berganti tempat. Kedua sisinya juga saling
+      -- menghapus di total saldo, jadi tidak ada uang yang lahir atau hilang.
       CASE t.jenis
         WHEN 'belanja'      THEN  t.nominal
         WHEN 'refund'       THEN -t.nominal

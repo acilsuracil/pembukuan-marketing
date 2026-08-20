@@ -12,7 +12,17 @@ const TONE: Record<string, "muted" | "good" | "warning" | "serious" | "critical"
   refund: "good",
   biaya_dompet: "serious",
   koreksi: "muted",
+  transfer_keluar: "muted",
+  transfer_masuk: "muted",
 };
+
+/** Arah pindahan ditulis lengkap, dari dompet mana ke dompet mana. */
+function jalurTransfer(t: TxRow): string {
+  const lawan = t.pasangan_dompet_name ?? "dompet lain";
+  return t.jenis === "transfer_keluar"
+    ? `${t.dompet_name ?? "–"} → ${lawan}`
+    : `${lawan} → ${t.dompet_name ?? "–"}`;
+}
 
 export default function TxTable({
   rows,
@@ -87,11 +97,13 @@ export default function TxTable({
                 {t.brand_name ?? "–"}
               </td>
               <td className="px-3 py-2.5 text-xs text-[var(--text-secondary)]">
-                {t.jenis === "belanja" && t.sumber
-                  ? t.sumber === "dompet"
-                    ? (t.dompet_name ?? SUMBER_LABEL.dompet)
-                    : SUMBER_LABEL.finance
-                  : (t.dompet_name ?? "–")}
+                {t.pasangan_id
+                  ? jalurTransfer(t)
+                  : t.jenis === "belanja" && t.sumber
+                    ? t.sumber === "dompet"
+                      ? (t.dompet_name ?? SUMBER_LABEL.dompet)
+                      : SUMBER_LABEL.finance
+                    : (t.dompet_name ?? "–")}
                 {t.penerima_nama && (
                   <span className="block text-[var(--text-muted)]">
                     {t.penerima_nama}
@@ -131,7 +143,11 @@ export default function TxTable({
                     {canDelete && !t.pengajuan_id && (
                       <DeleteTxButton
                         id={t.id}
-                        label={`${JENIS_LABEL[t.jenis]} ${fmtIdr(t.nominal)} tanggal ${fmtDate(t.tanggal)}`}
+                        label={
+                          t.pasangan_id
+                            ? `pindah saldo ${jalurTransfer(t)} ${fmtIdr(t.nominal)} tanggal ${fmtDate(t.tanggal)} (kedua sisinya sekaligus)`
+                            : `${JENIS_LABEL[t.jenis]} ${fmtIdr(t.nominal)} tanggal ${fmtDate(t.tanggal)}`
+                        }
                       />
                     )}
                   </span>

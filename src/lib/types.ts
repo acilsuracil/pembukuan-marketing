@@ -1,7 +1,14 @@
 export type Role = "owner" | "admin" | "staff";
 
 /** Jenis baris buku besar. Efek tiap jenis ke saldo & biaya ada di `v_transaksi`. */
-export type Jenis = "topup" | "belanja" | "refund" | "biaya_dompet" | "koreksi";
+export type Jenis =
+  | "topup"
+  | "belanja"
+  | "refund"
+  | "biaya_dompet"
+  | "koreksi"
+  | "transfer_keluar"
+  | "transfer_masuk";
 
 /** Asal uang sebuah belanja: langsung dari finance, atau dari dompet kita. */
 export type Sumber = "finance" | "dompet";
@@ -171,6 +178,9 @@ export interface TxRow {
   keterangan: string;
   no_ref: string;
   split_group: string | null;
+  /** Sisi lain sebuah pindah saldo antar-dompet; null kalau bukan transfer. */
+  pasangan_id: number | null;
+  pasangan_dompet_name: string | null;
   created_by: number | null;
   created_at: string;
   updated_at: string | null;

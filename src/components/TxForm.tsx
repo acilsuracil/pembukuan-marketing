@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useState } from "react";
 import { saveTransaksi, type ActionState } from "@/app/actions";
 import { JENIS_LABEL, todayISO } from "@/lib/format";
+import { JENIS_MANUAL } from "@/lib/jenis";
 import type { Jenis, Sumber, TxRow } from "@/lib/types";
 import MoneyField from "./MoneyField";
 import { Alert, FormButton } from "./ui";
@@ -19,7 +20,9 @@ export interface TxOpt {
   dompetId?: number | null;
 }
 
-const JENIS_HINT: Record<Jenis, string> = {
+// Hanya jenis yang bisa ditulis manual yang punya keterangan di sini; transfer
+// dibuat dari halaman Pindah saldo, bukan dari formulir ini.
+const JENIS_HINT: Partial<Record<Jenis, string>> = {
   belanja: "Uang yang benar-benar jadi biaya marketing.",
   topup: "Dana dari finance masuk dompet. Menambah saldo, belum jadi biaya.",
   refund:
@@ -29,7 +32,7 @@ const JENIS_HINT: Record<Jenis, string> = {
     "Penyesuaian saldo dompet saja — untuk merapikan selisih hasil cek mutasi. Tidak mengubah total biaya.",
 };
 
-const JENIS_ORDER: Jenis[] = ["belanja", "topup", "refund", "biaya_dompet", "koreksi"];
+const JENIS_ORDER = JENIS_MANUAL;
 
 export default function TxForm({
   initial,
@@ -117,7 +120,7 @@ export default function TxForm({
               </option>
             ))}
           </select>
-          <p className="hint">{JENIS_HINT[jenis]}</p>
+          <p className="hint">{JENIS_HINT[jenis] ?? ""}</p>
         </div>
       </div>
 

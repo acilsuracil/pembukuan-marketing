@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { saveBelanjaHarian, type ActionState } from "@/app/actions";
 import { fmtIdr } from "@/lib/format";
 import { parseRupiah } from "@/lib/num";
@@ -67,17 +67,33 @@ export default function HarianForm({
   const [dompetId, setDompetId] = useState(
     String(defaultDompetId ?? dompet[0]?.id ?? ""),
   );
-  const [rows, setRows] = useState<Row[]>([blank(1), blank(2), blank(3)]);
-  const [seq, setSeq] = useState(4);
+  /*
+   * Penomor kunci baris hidup di ref, bukan di state.
+   *
+   * Angka ini hanya dipakai React untuk membedakan baris; ia tidak pernah
+   * memengaruhi tampilan, jadi menyimpannya sebagai state cuma menambah satu
+   * pemicu render — dan sebelumnya justru menjadi lingkaran: effect di bawah
+   * menaikkan nomornya, nomornya jadi dependency effect itu, effect berjalan
+   * lagi, sampai React menyerah dengan "Maximum update depth exceeded".
+   */
+  const keyRef = useRef(0);
+  const freshRow = () => blank((keyRef.current += 1));
+  const [rows, setRows] = useState<Row[]>(() => [freshRow(), freshRow(), freshRow()]);
 
+  // Satu hasil simpan diproses tepat sekali: yang dibandingkan objek state-nya,
+  // bukan nilai `ok`-nya, supaya render ulang apa pun sesudahnya tidak memicu
+  // pengosongan grid untuk kedua kali.
+  const sudahDibereskan = useRef<ActionState | null>(null);
   useEffect(() => {
-    if (!state.ok) return;
+    if (!state.ok || sudahDibereskan.current === state) return;
+    sudahDibereskan.current = state;
     // Berhasil → kosongkan grid supaya bisa lanjut tanggal/dompet berikutnya,
     // tanpa risiko mengirim ulang baris yang sama.
-    setRows([blank(seq), blank(seq + 1), blank(seq + 2)]);
-    setSeq((s) => s + 3);
+    setRows([freshRow(), freshRow(), freshRow()]);
     router.refresh();
-  }, [state.ok, router, seq]);
+    // freshRow sengaja tidak jadi dependency: ia hanya menaikkan penomor di ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, router]);
 
   function patch(key: number, part: Partial<Row>) {
     setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...part } : r)));
@@ -314,10 +330,7 @@ export default function HarianForm({
                 <button
                   type="button"
                   className="btn btn-ghost px-2.5 py-1 text-xs"
-                  onClick={() => {
-                    setRows((rs) => [...rs, blank(seq)]);
-                    setSeq((s) => s + 1);
-                  }}
+                  onClick={() => setRows((rs) => [...rs, freshRow()])}
                 >
                   + Tambah baris
                 </button>

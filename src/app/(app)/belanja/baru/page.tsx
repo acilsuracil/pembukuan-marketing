@@ -1,12 +1,11 @@
 import Link from "next/link";
 import { connection } from "next/server";
 import TxForm from "@/components/TxForm";
+import { JENIS_MANUAL } from "@/lib/jenis";
 import { txOptions } from "@/lib/opts";
 import { requirePerm } from "@/lib/session";
 import { first, num, type SP } from "@/lib/sp";
 import type { Jenis } from "@/lib/types";
-
-const JENIS_SET: Jenis[] = ["belanja", "topup", "refund", "biaya_dompet", "koreksi"];
 
 export default async function BelanjaBaruPage({
   searchParams,
@@ -35,7 +34,7 @@ export default async function BelanjaBaruPage({
       <TxForm
         {...txOptions()}
         presetDompetId={num(sp, "dompet")}
-        presetJenis={JENIS_SET.includes(jenisRaw as Jenis) ? (jenisRaw as Jenis) : undefined}
+        presetJenis={JENIS_MANUAL.includes(jenisRaw as Jenis) ? (jenisRaw as Jenis) : undefined}
         backHref={first(sp, "back") || "/belanja"}
       />
     </div>

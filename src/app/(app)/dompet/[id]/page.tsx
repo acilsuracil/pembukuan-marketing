@@ -56,6 +56,12 @@ export default async function DompetDetailPage({
               >
                 Catat top-up
               </Link>
+              <Link
+                href={`/dompet/transfer?asal=${d.id}&back=/dompet/${d.id}`}
+                className="btn btn-ghost"
+              >
+                Pindah saldo
+              </Link>
             </>
           )}
         </div>

@@ -74,8 +74,13 @@ export default function MasterForm({
   const [state, action] = useActionState(ACTIONS[kind], EMPTY);
   const formRef = useRef<HTMLFormElement>(null);
 
+  // Yang dibandingkan objek state-nya, bukan nilai `ok`-nya: dua penyimpanan
+  // berhasil berturut-turut sama-sama ber-`ok: true`, jadi bergantung pada
+  // nilainya membuat form berhenti mengosongkan diri setelah yang pertama.
+  const sudahDibereskan = useRef<ActionState | null>(null);
   useEffect(() => {
-    if (!state.ok) return;
+    if (!state.ok || sudahDibereskan.current === state) return;
+    sudahDibereskan.current = state;
     // Selesai mengubah → kembali ke daftar. Selesai menambah → kosongkan form
     // supaya bisa langsung mengetik yang berikutnya.
     if (editing) router.push(listHref);
@@ -83,7 +88,7 @@ export default function MasterForm({
       formRef.current?.reset();
       router.refresh();
     }
-  }, [state.ok, editing, listHref, router]);
+  }, [state, editing, listHref, router]);
 
   return (
     <form ref={formRef} action={action} className="space-y-3.5">

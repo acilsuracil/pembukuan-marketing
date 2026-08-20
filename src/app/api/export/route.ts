@@ -1,10 +1,9 @@
 import { JENIS_LABEL, SUMBER_LABEL, todayISO } from "@/lib/format";
+import { JENIS_SEMUA } from "@/lib/jenis";
 import { hasPerm } from "@/lib/policy";
 import { listTransaksi, type TxFilter } from "@/lib/queries";
 import { getUser } from "@/lib/session";
 import type { Jenis } from "@/lib/types";
-
-const JENIS_SET: Jenis[] = ["belanja", "topup", "refund", "biaya_dompet", "koreksi"];
 
 function csvCell(v: unknown): string {
   const s = v === null || v === undefined ? "" : String(v);
@@ -26,7 +25,7 @@ export async function GET(request: Request) {
   const filter: TxFilter = {
     from: sp.get("from") || undefined,
     to: sp.get("to") || undefined,
-    jenis: JENIS_SET.includes(jenisRaw as Jenis) ? (jenisRaw as Jenis) : undefined,
+    jenis: JENIS_SEMUA.includes(jenisRaw as Jenis) ? (jenisRaw as Jenis) : undefined,
     divisiId: idOf("divisi"),
     platformId: idOf("platform"),
     brandId: idOf("brand"),

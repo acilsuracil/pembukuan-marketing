@@ -162,6 +162,8 @@ export const JENIS_LABEL: Record<Jenis, string> = {
   refund: "Refund",
   biaya_dompet: "Biaya bank",
   koreksi: "Koreksi saldo",
+  transfer_keluar: "Pindah saldo keluar",
+  transfer_masuk: "Pindah saldo masuk",
 };
 
 export const SUMBER_LABEL: Record<Sumber, string> = {

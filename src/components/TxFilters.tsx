@@ -3,10 +3,12 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { JENIS_LABEL } from "@/lib/format";
-import type { Jenis } from "@/lib/types";
+import { JENIS_SEMUA } from "@/lib/jenis";
 import type { TxOpt } from "./TxForm";
 
-const JENIS_ORDER: Jenis[] = ["belanja", "topup", "refund", "biaya_dompet", "koreksi"];
+// Transfer ikut bisa difilter walau tidak bisa dibuat dari formulir satuan —
+// riwayat pindahan tetap perlu bisa ditelusuri di sini.
+const JENIS_ORDER = JENIS_SEMUA;
 
 export interface TxFilterValues {
   from: string;

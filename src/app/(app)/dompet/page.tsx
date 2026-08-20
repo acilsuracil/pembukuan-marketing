@@ -93,12 +93,19 @@ export default async function DompetPage({
 
   return (
     <div className="space-y-5">
-      <div className="page-header">
-        <h1 className="text-xl font-semibold tracking-tight">Dompet</h1>
-        <p className="mt-0.5 text-sm text-[var(--text-muted)]">
-          Dana dari finance mendarat di sini dulu, lalu dipakai auto payment.
-          Saldonya = saldo awal + top-up − belanja dari dompet.
-        </p>
+      <div className="page-header flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">Dompet</h1>
+          <p className="mt-0.5 text-sm text-[var(--text-muted)]">
+            Dana dari finance mendarat di sini dulu, lalu dipakai auto payment.
+            Saldonya = saldo awal + top-up ± pindahan − belanja dari dompet.
+          </p>
+        </div>
+        {hasPerm(me, "addBelanja") && aktif.length >= 2 && (
+          <Link href="/dompet/transfer" className="btn btn-ghost">
+            Pindah saldo
+          </Link>
+        )}
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
@@ -227,6 +234,14 @@ export default async function DompetPage({
                         >
                           Catat top-up
                         </Link>
+                        {aktif.length >= 2 && (
+                          <Link
+                            href={`/dompet/transfer?asal=${d.id}&back=/dompet`}
+                            className="btn btn-ghost px-2.5 py-1 text-xs"
+                          >
+                            Pindah saldo
+                          </Link>
+                        )}
                       </>
                     )}
                   </div>

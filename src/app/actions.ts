@@ -5,6 +5,7 @@ import { hashPassword, passwordProblem } from "@/lib/auth";
 import { createBackup, removeBackup, restoreBackup } from "@/lib/backup";
 import { run, setSetting, tx as inTransaction } from "@/lib/db";
 import { fmtIdr, todayISO } from "@/lib/format";
+import { JENIS_MANUAL } from "@/lib/jenis";
 import { parseRupiahInt } from "@/lib/num";
 import { SLOT_COUNT } from "@/lib/palette";
 import {
@@ -810,7 +811,7 @@ interface TxValues {
   noRef: string;
 }
 
-const JENIS_ALL: Jenis[] = ["topup", "belanja", "refund", "biaya_dompet", "koreksi"];
+
 
 function readTx(fd: FormData): { ok: false; error: string } | { ok: true; v: TxValues } {
   const tanggal = str(fd, "tanggal");
@@ -818,7 +819,7 @@ function readTx(fd: FormData): { ok: false; error: string } | { ok: true; v: TxV
     return { ok: false, error: "Tanggal belum diisi dengan benar." };
 
   const jenis = str(fd, "jenis") as Jenis;
-  if (!JENIS_ALL.includes(jenis)) return { ok: false, error: "Jenis transaksi tidak valid." };
+  if (!JENIS_MANUAL.includes(jenis)) return { ok: false, error: "Jenis transaksi tidak valid." };
 
   const nominal = requiredMoney(fd, "nominal", "Nominal");
   if (!nominal.ok) return { ok: false, error: nominal.error };
@@ -905,6 +906,15 @@ export async function saveTransaksi(
     const before = getTransaksi(idRead.id!);
     if (!before) return { ok: false, error: "Transaksi tidak ditemukan." };
     if (isLocked(before.tanggal)) return { ok: false, error: lockError(before.tanggal) };
+    // Satu sisi transfer tidak boleh diubah sendirian: nominalnya akan berbeda
+    // dari sisi lainnya, dan uang akan tampak lahir atau hilang di antara dua
+    // dompet. Hapus transfernya, lalu catat ulang.
+    if (before.pasangan_id)
+      return {
+        ok: false,
+        error:
+          "Ini satu sisi dari pindah saldo antar-dompet. Hapus transfernya (kedua sisinya ikut terhapus), lalu catat ulang dengan angka yang benar.",
+      };
     // Baris yang lahir dari pengajuan tetap boleh diperbaiki, tapi tautannya
     // dipertahankan supaya jejak "dana ini dari pengajuan mana" tidak hilang.
     run(
@@ -967,11 +977,158 @@ export async function deleteTransaksi(
       error: "Baris ini lahir dari pengajuan. Batalkan pembayaran pengajuannya supaya keduanya tetap sinkron.",
     };
 
+  // Transfer dihapus sebagai satu kesatuan. Menyisakan satu sisinya berarti
+  // saldo salah satu dompet naik atau turun tanpa lawan — dan karena transfer
+  // tidak menyentuh total biaya, tidak ada angka lain yang akan menunjukkan itu.
+  if (t.pasangan_id) {
+    const pasangan = getTransaksi(t.pasangan_id);
+    if (pasangan && isLocked(pasangan.tanggal))
+      return { ok: false, error: lockError(pasangan.tanggal) };
+    try {
+      inTransaction(() => {
+        run(`DELETE FROM transaksi WHERE id = ? OR id = ?`, id, t.pasangan_id);
+      });
+    } catch (e) {
+      return { ok: false, error: `Gagal menghapus: ${(e as Error).message}` };
+    }
+    logActivity(
+      me,
+      "hapus-transfer",
+      `#${id} + #${t.pasangan_id} ${fmtIdr(t.nominal)}`,
+    );
+    await touchSession(me);
+    refresh();
+    return {
+      ok: true,
+      message: "Pindah saldo dihapus — kedua sisinya sekaligus.",
+    };
+  }
+
   run(`DELETE FROM transaksi WHERE id = ?`, id);
   logActivity(me, "hapus-transaksi", `#${id} ${t.jenis} ${fmtIdr(t.nominal)}`);
   await touchSession(me);
   refresh();
   return { ok: true, message: "Transaksi dihapus." };
+}
+
+/**
+ * Pindah saldo antar-dompet: mis. Bank Jago → Jenius.
+ *
+ * Dicatat sebagai **dua baris berpasangan**, bukan satu baris yang menyentuh dua
+ * dompet. Dengan begitu setiap baris tetap milik tepat satu dompet, sehingga
+ * saldo, mutasi, dan opname tiap dompet dihitung dengan rumus yang sama seperti
+ * sebelum fitur ini ada — tidak ada satu pun query yang perlu tahu soal transfer.
+ *
+ * Keduanya `delta_biaya = 0`: uangnya belum dipakai, hanya berganti tempat.
+ */
+export async function saveTransfer(
+  _prev: ActionState,
+  fd: FormData,
+): Promise<ActionState> {
+  const me = await authed();
+  if (!me) return DENIED;
+  if (!hasPerm(me, "addBelanja")) return NO_ACCESS;
+
+  const tanggal = str(fd, "tanggal");
+  if (!ISO_DATE.test(tanggal))
+    return { ok: false, error: "Tanggal belum diisi dengan benar." };
+  if (isLocked(tanggal)) return { ok: false, error: lockError(tanggal) };
+
+  const asalRead = optionalId(fd, "dompet_asal_id", "Dompet asal");
+  if (!asalRead.ok) return { ok: false, error: asalRead.error };
+  const tujuanRead = optionalId(fd, "dompet_tujuan_id", "Dompet tujuan");
+  if (!tujuanRead.ok) return { ok: false, error: tujuanRead.error };
+  if (!asalRead.id) return { ok: false, error: "Pilih dompet asalnya." };
+  if (!tujuanRead.id) return { ok: false, error: "Pilih dompet tujuannya." };
+  if (asalRead.id === tujuanRead.id)
+    return { ok: false, error: "Dompet asal dan tujuan tidak boleh sama." };
+
+  const asal = getDompet(asalRead.id);
+  const tujuan = getDompet(tujuanRead.id);
+  if (!asal || !tujuan) return { ok: false, error: "Dompet tidak ditemukan." };
+  if (tanggal < asal.tanggal_awal)
+    return {
+      ok: false,
+      error: `Tanggal ini lebih awal dari saldo awal ${asal.name} (${asal.tanggal_awal}).`,
+    };
+  if (tanggal < tujuan.tanggal_awal)
+    return {
+      ok: false,
+      error: `Tanggal ini lebih awal dari saldo awal ${tujuan.name} (${tujuan.tanggal_awal}).`,
+    };
+
+  const nominal = requiredMoney(fd, "nominal", "Nominal");
+  if (!nominal.ok) return { ok: false, error: nominal.error };
+
+  // Biaya transfer antar-bank dicatat terpisah sebagai biaya bank pada dompet
+  // asal — ia memang biaya, sementara pindahannya sendiri bukan.
+  const biaya = optionalMoney(fd, "biaya_admin", "Biaya transfer");
+  if (!biaya.ok) return { ok: false, error: biaya.error };
+
+  const catatan = str(fd, "keterangan");
+  const noRef = str(fd, "no_ref");
+  const now = new Date().toISOString();
+
+  try {
+    inTransaction(() => {
+      const ins = (jenis: Jenis, dompetId: number, keterangan: string) =>
+        Number(
+          run(
+            `INSERT INTO transaksi (tanggal, jenis, nominal, dompet_id, keterangan,
+                                    no_ref, created_by, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            tanggal, jenis, nominal.n, dompetId, keterangan, noRef, me.id, now,
+          ).lastInsertRowid,
+        );
+
+      const suffix = catatan ? ` — ${catatan}` : "";
+      const keluar = ins(
+        "transfer_keluar",
+        asal.id,
+        `Pindah saldo ke ${tujuan.name}${suffix}`,
+      );
+      const masuk = ins(
+        "transfer_masuk",
+        tujuan.id,
+        `Pindah saldo dari ${asal.name}${suffix}`,
+      );
+
+      // Saling menunjuk, jadi dari sisi mana pun pasangannya bisa ditemukan —
+      // termasuk saat menghapus.
+      run(`UPDATE transaksi SET pasangan_id = ? WHERE id = ?`, masuk, keluar);
+      run(`UPDATE transaksi SET pasangan_id = ? WHERE id = ?`, keluar, masuk);
+
+      if (biaya.n > 0) {
+        run(
+          `INSERT INTO transaksi (tanggal, jenis, nominal, dompet_id, keterangan,
+                                  no_ref, created_by, created_at)
+           VALUES (?, 'biaya_dompet', ?, ?, ?, ?, ?, ?)`,
+          tanggal, biaya.n, asal.id,
+          `Biaya transfer ke ${tujuan.name}`, noRef, me.id, now,
+        );
+      }
+    });
+  } catch (e) {
+    return { ok: false, error: `Gagal mencatat pindah saldo: ${(e as Error).message}` };
+  }
+
+  logActivity(
+    me,
+    "pindah-saldo",
+    `${asal.name} → ${tujuan.name} ${fmtIdr(nominal.n)}${biaya.n > 0 ? ` + biaya ${fmtIdr(biaya.n)}` : ""}`,
+  );
+  await touchSession(me);
+  refresh();
+
+  const sisaAsal = getSaldoDompet(asal.id)?.sisa ?? 0;
+  const sisaTujuan = getSaldoDompet(tujuan.id)?.sisa ?? 0;
+  return {
+    ok: true,
+    message:
+      `${fmtIdr(nominal.n)} dipindah dari ${asal.name} ke ${tujuan.name}. ` +
+      `Sisa ${asal.name} ${fmtIdr(sisaAsal)}, ${tujuan.name} ${fmtIdr(sisaTujuan)}.` +
+      (sisaAsal < 0 ? ` Saldo ${asal.name} jadi minus — periksa top-up yang belum tercatat.` : ""),
+  };
 }
 
 /**

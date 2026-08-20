@@ -5,13 +5,12 @@ import TxFilters from "@/components/TxFilters";
 import TxTable from "@/components/TxTable";
 import { fmtIdr } from "@/lib/format";
 import { txOptions } from "@/lib/opts";
+import { JENIS_SEMUA } from "@/lib/jenis";
 import { hasPerm } from "@/lib/policy";
 import { getSummary, listTransaksi, type TxFilter } from "@/lib/queries";
 import { requireUser } from "@/lib/session";
 import { first, num, qs, type SP } from "@/lib/sp";
 import type { Jenis } from "@/lib/types";
-
-const JENIS_SET: Jenis[] = ["belanja", "topup", "refund", "biaya_dompet", "koreksi"];
 
 export default async function BelanjaPage({
   searchParams,
@@ -37,7 +36,7 @@ export default async function BelanjaPage({
   const filter: TxFilter = {
     from: values.from || undefined,
     to: values.to || undefined,
-    jenis: JENIS_SET.includes(jenisRaw as Jenis) ? (jenisRaw as Jenis) : undefined,
+    jenis: JENIS_SEMUA.includes(jenisRaw as Jenis) ? (jenisRaw as Jenis) : undefined,
     divisiId: num(sp, "divisi"),
     platformId: num(sp, "platform"),
     brandId: num(sp, "brand"),
