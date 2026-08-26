@@ -53,7 +53,7 @@ export default async function BelanjaPage({
     <div className="space-y-5">
       <div className="page-header flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight">Belanja &amp; mutasi</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Pengeluaran &amp; mutasi</h1>
           <p className="mt-0.5 text-sm text-[var(--text-muted)]">
             Seluruh baris buku besar. Top-up ikut tampil di sini, tapi tidak
             dihitung sebagai biaya.
@@ -78,12 +78,12 @@ export default async function BelanjaPage({
           sub={`${s.txCount} baris`}
         />
         <StatTile
-          label="Belanja dari dompet"
+          label="Pengeluaran dari dompet"
           value={fmtIdr(s.belanjaDompet)}
           sub="auto payment & transfer dari dompet kita"
         />
         <StatTile
-          label="Belanja finance langsung"
+          label="Pengeluaran finance langsung"
           value={fmtIdr(s.belanjaFinance)}
           sub="tanpa lewat dompet"
         />

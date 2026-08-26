@@ -96,7 +96,7 @@ export default function PengajuanActions({
           <p className="text-xs text-[var(--text-muted)]">
             {tujuan === "dompet"
               ? `Akan dicatat sebagai top-up ke ${dompetName ?? "dompet"} — menambah saldo, belum jadi biaya.`
-              : "Akan dicatat sebagai belanja — langsung masuk Total Biaya Marketing."}
+              : "Akan dicatat sebagai pengeluaran — langsung masuk Total Biaya Marketing."}
           </p>
 
           <div>

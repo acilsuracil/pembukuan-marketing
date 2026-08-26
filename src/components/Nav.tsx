@@ -73,7 +73,7 @@ const ICONS: Record<string, React.ReactNode> = {
 const LINKS: Array<{ href: string; label: string; needs?: keyof NavAccess }> = [
   { href: "/", label: "Ringkasan" },
   { href: "/pengajuan", label: "Pengajuan" },
-  { href: "/belanja", label: "Belanja" },
+  { href: "/belanja", label: "Pengeluaran" },
   { href: "/dompet", label: "Dompet" },
   { href: "/laporan", label: "Laporan" },
   { href: "/master", label: "Data master", needs: "master" },

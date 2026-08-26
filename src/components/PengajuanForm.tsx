@@ -279,7 +279,7 @@ export default function PengajuanForm({
             </select>
             <p className="hint">
               Dana yang cair ke sini dicatat sebagai top-up, bukan biaya. Biayanya
-              muncul saat kamu input belanja hariannya.
+              muncul saat kamu input pengeluaran hariannya.
             </p>
           </div>
         )}

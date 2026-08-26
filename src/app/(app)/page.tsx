@@ -78,7 +78,7 @@ export default async function RingkasanPage() {
           hero
         />
         <StatTile
-          label="Belanja hari ini"
+          label="Pengeluaran hari ini"
           value={fmtIdr(hariIni)}
           sub={fmtDate(today)}
         />
@@ -158,7 +158,7 @@ export default async function RingkasanPage() {
             rows={terbaru}
             canEdit={false}
             canDelete={false}
-            emptyText="Belum ada transaksi. Mulai dari pengajuan dana, atau catat belanja langsung."
+            emptyText="Belum ada transaksi. Mulai dari pengajuan dana, atau catat pengeluaran langsung."
           />
         </section>
 

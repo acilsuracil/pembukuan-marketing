@@ -158,7 +158,7 @@ export function addMonths(ym: string, n: number): string {
 
 export const JENIS_LABEL: Record<Jenis, string> = {
   topup: "Top-up dompet",
-  belanja: "Belanja",
+  belanja: "Pengeluaran",
   refund: "Refund",
   biaya_dompet: "Biaya bank",
   koreksi: "Koreksi saldo",

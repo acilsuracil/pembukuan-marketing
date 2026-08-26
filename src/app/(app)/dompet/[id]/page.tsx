@@ -83,7 +83,7 @@ export default async function DompetDetailPage({
         <StatTile
           label="Total keluar"
           value={fmtIdr(d.keluar)}
-          sub={`belanja ${fmtIdr(d.belanja)}`}
+          sub={`pengeluaran ${fmtIdr(d.belanja)}`}
         />
       </div>
 
@@ -110,7 +110,7 @@ export default async function DompetDetailPage({
                     colSpan={5}
                     className="px-4 py-10 text-center text-xs text-[var(--text-muted)]"
                   >
-                    Belum ada mutasi. Catat top-up pertama, lalu belanjanya lewat
+                    Belum ada mutasi. Catat top-up pertama, lalu pengeluarannya lewat
                     input harian.
                   </td>
                 </tr>

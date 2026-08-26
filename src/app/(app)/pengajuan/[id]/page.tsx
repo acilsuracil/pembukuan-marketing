@@ -124,7 +124,7 @@ export default async function PengajuanDetailPage({
             {rows.length === 0 ? (
               <p className="mt-3 text-xs text-[var(--text-muted)]">
                 Belum ada. Baris akan lahir sendiri begitu pengajuan ini ditandai
-                dibayar — {g.tujuan === "dompet" ? "sebagai top-up dompet" : "sebagai belanja"}.
+                dibayar — {g.tujuan === "dompet" ? "sebagai top-up dompet" : "sebagai pengeluaran"}.
               </p>
             ) : (
               <table className="mt-3 w-full text-sm">

@@ -343,7 +343,7 @@ export default function HarianForm({
 
       <div className="flex flex-wrap items-center gap-3">
         <FormButton pendingLabel="Menyimpan…" disabled={terisi === 0}>
-          Simpan {terisi > 0 ? `${terisi} baris` : "belanja harian"}
+          Simpan {terisi > 0 ? `${terisi} baris` : "pengeluaran harian"}
         </FormButton>
         <p className="text-xs text-[var(--text-muted)]">
           Baris tanpa nominal dilewati. Semua baris disimpan sekaligus — kalau ada

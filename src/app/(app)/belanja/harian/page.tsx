@@ -36,7 +36,7 @@ export default async function HarianPage({
           </h1>
           <p className="mt-0.5 text-sm text-[var(--text-muted)]">
             Salin mutasi dompet hari itu: satu baris per platform / akun iklan.
-            Semua tersimpan sebagai belanja dari dompet yang dipilih.
+            Semua tersimpan sebagai pengeluaran dari dompet yang dipilih.
           </p>
         </div>
         <Link href="/belanja" className="btn btn-ghost">
@@ -78,7 +78,7 @@ export default async function HarianPage({
           rows={hariIni}
           canEdit={hasPerm(me, "editBelanja")}
           canDelete={hasPerm(me, "deleteBelanja")}
-          emptyText="Belum ada belanja yang tercatat hari ini."
+          emptyText="Belum ada pengeluaran yang tercatat hari ini."
         />
       </section>
     </div>

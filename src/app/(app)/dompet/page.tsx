@@ -98,7 +98,7 @@ export default async function DompetPage({
           <h1 className="text-xl font-semibold tracking-tight">Dompet</h1>
           <p className="mt-0.5 text-sm text-[var(--text-muted)]">
             Dana dari finance mendarat di sini dulu, lalu dipakai auto payment.
-            Saldonya = saldo awal + top-up ± pindahan − belanja dari dompet.
+            Saldonya = saldo awal + top-up ± pindahan − pengeluaran dari dompet.
           </p>
         </div>
         {hasPerm(me, "addBelanja") && aktif.length >= 2 && (
@@ -200,7 +200,7 @@ export default async function DompetPage({
                   {[
                     ["Saldo awal", fmtIdr(d.saldo_awal), fmtDate(d.tanggal_awal)],
                     ["Masuk", fmtIdr(d.masuk), `top-up ${fmtIdr(d.topup)}`],
-                    ["Keluar", fmtIdr(d.keluar), `belanja ${fmtIdr(d.belanja)}`],
+                    ["Keluar", fmtIdr(d.keluar), `pengeluaran ${fmtIdr(d.belanja)}`],
                     [
                       "Batas minimum",
                       d.min_saldo > 0 ? fmtIdr(d.min_saldo) : "–",

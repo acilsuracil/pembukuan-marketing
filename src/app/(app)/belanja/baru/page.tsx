@@ -23,7 +23,7 @@ export default async function BelanjaBaruPage({
         <h1 className="text-xl font-semibold tracking-tight">Catat transaksi</h1>
         <p className="mt-0.5 text-sm text-[var(--text-muted)]">
           Untuk satu baris: endorse, vendor SEO, biaya admin bank, atau koreksi
-          saldo. Belanja iklan harian lebih cepat lewat{" "}
+          saldo. Pengeluaran iklan harian lebih cepat lewat{" "}
           <Link href="/belanja/harian" className="underline">
             input harian dompet
           </Link>

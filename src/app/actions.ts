@@ -937,7 +937,7 @@ export async function setPengajuanStatus(
   if (g.tujuan === "langsung" && !g.divisi_id)
     return {
       ok: false,
-      error: "Isi divisinya dulu di pengajuan — tanpa itu belanjanya tidak masuk laporan mana pun.",
+      error: "Isi divisinya dulu di pengajuan — tanpa itu pengeluarannya tidak masuk laporan mana pun.",
     };
 
   /*
@@ -1049,7 +1049,7 @@ export async function setPengajuanStatus(
   logActivity(
     me,
     "bayar-pengajuan",
-    `#${id} ${fmtIdr(nominal)} → ${g.tujuan === "dompet" ? `top-up ${g.dompet_name}` : "belanja"}` +
+    `#${id} ${fmtIdr(nominal)} → ${g.tujuan === "dompet" ? `top-up ${g.dompet_name}` : "pengeluaran"}` +
       (bagian.length > 1 ? `, dibagi ke ${bagian.length} brand` : ""),
   );
   await touchSession(me);
@@ -1059,8 +1059,8 @@ export async function setPengajuanStatus(
     ok: true,
     message:
       (g.tujuan === "dompet"
-        ? `Dana ${fmtIdr(nominal)} masuk ${g.dompet_name}. Belanjanya dicatat menyusul dari input harian.`
-        : `Belanja ${fmtIdr(nominal)} tercatat.`) +
+        ? `Dana ${fmtIdr(nominal)} masuk ${g.dompet_name}. Pengeluarannya dicatat menyusul dari input harian.`
+        : `Pengeluaran ${fmtIdr(nominal)} tercatat.`) +
       (bagian.length > 1
         ? ` Dibagi jadi ${bagian.length} baris: ${bagian
             .map((b, i) => `${porsiTersimpan[i].brand_name} ${fmtIdr(b.nominal)}`)
@@ -1189,10 +1189,10 @@ function readTx(fd: FormData): { ok: false; error: string } | { ok: true; v: TxV
   if (jenis === "belanja") {
     const s = str(fd, "sumber");
     if (s !== "finance" && s !== "dompet")
-      return { ok: false, error: "Belanja harus menyebut sumber dananya." };
+      return { ok: false, error: "Pengeluaran harus menyebut sumber dananya." };
     sumber = s;
     if (s === "dompet" && !dompet.id)
-      return { ok: false, error: "Belanja dari dompet harus menyebut dompetnya." };
+      return { ok: false, error: "Pengeluaran dari dompet harus menyebut dompetnya." };
   }
 
   // Divisi & platform wajib untuk baris yang mempengaruhi biaya kelompok.

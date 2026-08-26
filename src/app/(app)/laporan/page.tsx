@@ -70,7 +70,7 @@ export default async function LaporanPage({
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Laporan</h1>
           <p className="mt-0.5 text-sm text-[var(--text-muted)]">
-            Periode {periodeLabel}. Total biaya = belanja + biaya bank − refund;
+            Periode {periodeLabel}. Total biaya = pengeluaran + biaya bank − refund;
             top-up ke dompet tidak dihitung sebagai biaya.
           </p>
         </div>
@@ -96,12 +96,12 @@ export default async function LaporanPage({
         <StatTile
           label="Lewat dompet"
           value={fmtIdr(s.belanjaDompet)}
-          sub={`${pct(s.belanjaDompet, s.belanjaDompet + s.belanjaFinance)} dari belanja`}
+          sub={`${pct(s.belanjaDompet, s.belanjaDompet + s.belanjaFinance)} dari pengeluaran`}
         />
         <StatTile
           label="Finance langsung"
           value={fmtIdr(s.belanjaFinance)}
-          sub={`${pct(s.belanjaFinance, s.belanjaDompet + s.belanjaFinance)} dari belanja`}
+          sub={`${pct(s.belanjaFinance, s.belanjaDompet + s.belanjaFinance)} dari pengeluaran`}
         />
         <StatTile
           label="Refund & biaya bank"

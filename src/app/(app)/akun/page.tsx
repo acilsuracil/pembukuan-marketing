@@ -16,7 +16,7 @@ export default async function AkunPage() {
             ? "Owner — akses penuh, izinnya tidak bisa dibatasi"
             : user.role === "admin"
               ? "Admin — mencatat, menandai dana cair, dan mengelola data master"
-              : "Staff — mencatat pengajuan dan belanja harian"}
+              : "Staff — mencatat pengajuan dan pengeluaran harian"}
         </p>
       </div>
 
