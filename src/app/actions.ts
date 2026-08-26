@@ -14,6 +14,7 @@ import { run, setSetting, tx as inTransaction } from "@/lib/db";
 import { fmtIdr, todayISO } from "@/lib/format";
 import { JENIS_MANUAL } from "@/lib/jenis";
 import { parseRupiahInt } from "@/lib/num";
+import { selisihPorsi, skalakan } from "@/lib/split";
 import { SLOT_COUNT } from "@/lib/palette";
 import {
   hasPerm,
@@ -27,6 +28,7 @@ import {
 } from "@/lib/policy";
 import {
   attachmentsOf,
+  brandPengajuan,
   countActiveOwners,
   getAttachment,
   getDompet,
@@ -639,6 +641,8 @@ interface PengajuanValues {
   platformId: number | null;
   divisiId: number | null;
   catatan: string;
+  /** Porsi per brand. Kosong = brand tunggal lewat `brandId`. */
+  porsi: Array<{ brandId: number; nominal: number }>;
 }
 
 function readPengajuan(
@@ -682,6 +686,61 @@ function readPengajuan(
     };
   if (!divisi.id) return { ok: false, error: "Divisi wajib diisi." };
 
+  /*
+   * Pembagian ke beberapa brand.
+   *
+   * Porsinya dikirim sebagai dua larik sejajar — brand dan nominalnya — persis
+   * seperti grid input harian. Jumlahnya wajib sama **persis** dengan nominal
+   * pengajuan: porsi yang tidak berjumlah pas akan melahirkan baris buku besar
+   * yang totalnya berbeda dari uang yang benar-benar cair, dan selisih itu tidak
+   * akan muncul di angka mana pun sampai ada yang mencocokkan mutasi bank.
+   */
+  const porsi: Array<{ brandId: number; nominal: number }> = [];
+  if (str(fd, "brand_mode") === "multi") {
+    const brands = fd.getAll("porsi_brand").map((x) => String(x).trim());
+    const nominals = fd.getAll("porsi_nominal").map((x) => String(x).trim());
+
+    for (let i = 0; i < brands.length; i++) {
+      if (brands[i] === "" && (nominals[i] ?? "") === "") continue; // baris kosong
+      const brandId = Number(brands[i]);
+      if (!Number.isInteger(brandId) || brandId <= 0)
+        return { ok: false, error: `Baris pembagian ${i + 1}: brand belum dipilih.` };
+
+      const n = parseRupiahInt(nominals[i] ?? "");
+      if (n === null)
+        return {
+          ok: false,
+          error: `Baris pembagian ${i + 1}: porsi "${nominals[i]}" tidak terbaca.`,
+        };
+      if (n <= 0)
+        return {
+          ok: false,
+          error: `Baris pembagian ${i + 1}: porsi harus lebih besar dari 0.`,
+        };
+      porsi.push({ brandId, nominal: n });
+    }
+
+    if (porsi.length < 2)
+      return {
+        ok: false,
+        error: "Pembagian butuh minimal dua brand. Kalau cuma satu, pakai pilihan brand biasa.",
+      };
+    if (new Set(porsi.map((p) => p.brandId)).size !== porsi.length)
+      return { ok: false, error: "Ada brand yang dipilih lebih dari sekali." };
+
+    const selisih = selisihPorsi(
+      porsi.map((p) => p.nominal),
+      nominal.n,
+    );
+    if (selisih !== 0)
+      return {
+        ok: false,
+        error:
+          `Jumlah porsi ${fmtIdr(porsi.reduce((a, p) => a + p.nominal, 0))} tidak sama dengan nominalnya ` +
+          `${fmtIdr(nominal.n)} — ${selisih > 0 ? "lebih" : "kurang"} ${fmtIdr(Math.abs(selisih))}.`,
+      };
+  }
+
   return {
     ok: true,
     v: {
@@ -691,10 +750,13 @@ function readPengajuan(
       tujuan,
       penerimaId: tujuan === "langsung" ? penerima.id : null,
       dompetId: tujuan === "dompet" ? dompet.id : null,
-      brandId: brand.id,
+      // Brand tunggal dikosongkan saat dibagi: satu-satunya sumber pembagian
+      // adalah tabel porsinya, jadi tidak ada dua tempat yang bisa berselisih.
+      brandId: porsi.length > 0 ? null : brand.id,
       platformId: platform.id,
       divisiId: divisi.id,
       catatan: str(fd, "catatan"),
+      porsi,
     },
   };
 }
@@ -726,36 +788,77 @@ export async function savePengajuan(
         ok: false,
         error: "Pengajuan yang sudah dibayar tidak bisa diubah. Batalkan pembayarannya dulu.",
       };
-    run(
-      `UPDATE pengajuan SET tanggal = ?, keterangan = ?, nominal = ?, tujuan = ?,
-              penerima_id = ?, dompet_id = ?, brand_id = ?, platform_id = ?,
-              divisi_id = ?, catatan = ?, updated_at = ?
-       WHERE id = ?`,
-      v.tanggal, v.keterangan, v.nominal, v.tujuan, v.penerimaId, v.dompetId,
-      v.brandId, v.platformId, v.divisiId, v.catatan, new Date().toISOString(),
-      idRead.id,
+    // Pengajuan dan porsinya ditulis dalam satu transaksi DB: porsi lama yang
+    // sudah terhapus sementara pengajuannya gagal diperbarui akan menyisakan
+    // pembagian yang jumlahnya tidak sama dengan nominalnya.
+    try {
+      inTransaction(() => {
+        run(
+          `UPDATE pengajuan SET tanggal = ?, keterangan = ?, nominal = ?, tujuan = ?,
+                  penerima_id = ?, dompet_id = ?, brand_id = ?, platform_id = ?,
+                  divisi_id = ?, catatan = ?, updated_at = ?
+           WHERE id = ?`,
+          v.tanggal, v.keterangan, v.nominal, v.tujuan, v.penerimaId, v.dompetId,
+          v.brandId, v.platformId, v.divisiId, v.catatan, new Date().toISOString(),
+          idRead.id,
+        );
+        tulisPorsi(idRead.id!, v.porsi);
+      });
+    } catch (e) {
+      return { ok: false, error: `Gagal menyimpan: ${(e as Error).message}` };
+    }
+    logActivity(
+      me,
+      "ubah-pengajuan",
+      `#${idRead.id} ${fmtIdr(v.nominal)}${v.porsi.length ? ` (${v.porsi.length} brand)` : ""}`,
     );
-    logActivity(me, "ubah-pengajuan", `#${idRead.id} ${fmtIdr(v.nominal)}`);
   } else {
     const status = str(fd, "status") === "diajukan" ? "diajukan" : "draft";
-    run(
-      `INSERT INTO pengajuan (tanggal, keterangan, nominal, tujuan, penerima_id,
-                              dompet_id, brand_id, platform_id, divisi_id, status,
-                              catatan, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      v.tanggal, v.keterangan, v.nominal, v.tujuan, v.penerimaId, v.dompetId,
-      v.brandId, v.platformId, v.divisiId, status, v.catatan, me.id,
-      new Date().toISOString(),
+    try {
+      inTransaction(() => {
+        const res = run(
+          `INSERT INTO pengajuan (tanggal, keterangan, nominal, tujuan, penerima_id,
+                                  dompet_id, brand_id, platform_id, divisi_id, status,
+                                  catatan, created_by, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          v.tanggal, v.keterangan, v.nominal, v.tujuan, v.penerimaId, v.dompetId,
+          v.brandId, v.platformId, v.divisiId, status, v.catatan, me.id,
+          new Date().toISOString(),
+        );
+        tulisPorsi(Number(res.lastInsertRowid), v.porsi);
+      });
+    } catch (e) {
+      return { ok: false, error: `Gagal menyimpan: ${(e as Error).message}` };
+    }
+    logActivity(
+      me,
+      "tambah-pengajuan",
+      `${fmtIdr(v.nominal)} — ${v.keterangan}${v.porsi.length ? ` (${v.porsi.length} brand)` : ""}`,
     );
-    logActivity(me, "tambah-pengajuan", `${fmtIdr(v.nominal)} — ${v.keterangan}`);
   }
 
   await touchSession(me);
   refresh();
   return {
     ok: true,
-    message: editing ? "Pengajuan diperbarui." : "Pengajuan tersimpan.",
+    message:
+      (editing ? "Pengajuan diperbarui." : "Pengajuan tersimpan.") +
+      (v.porsi.length ? ` Dibagi ke ${v.porsi.length} brand.` : ""),
   };
+}
+
+/** Menulis ulang porsi brand sebuah pengajuan. Daftar kosong = brand tunggal. */
+function tulisPorsi(
+  pengajuanId: number,
+  porsi: Array<{ brandId: number; nominal: number }>,
+) {
+  run(`DELETE FROM pengajuan_brand WHERE pengajuan_id = ?`, pengajuanId);
+  for (const p of porsi) {
+    run(
+      `INSERT INTO pengajuan_brand (pengajuan_id, brand_id, nominal) VALUES (?, ?, ?)`,
+      pengajuanId, p.brandId, p.nominal,
+    );
+  }
 }
 
 const STATUS_FLOW: PengajuanStatus[] = [
@@ -856,27 +959,54 @@ export async function setPengajuanStatus(
   const rejection = buktiRejection(files);
   if (rejection) return { ok: false, error: rejection };
 
+  /*
+   * Pembagian ke beberapa brand melahirkan **satu baris per brand**, bukan satu
+   * baris dengan daftar brand. Dengan begitu setiap baris tetap punya tepat satu
+   * brand, sehingga laporan per brand, matriks, filter, dan ekspor CSV tetap
+   * benar tanpa diubah sama sekali — dan jumlah pecahannya sama persis dengan
+   * uang yang cair.
+   *
+   * Kalau yang cair berbeda dari yang diminta, porsinya diskalakan dengan
+   * perbandingan yang sama; jumlahnya tetap dijamin pas oleh `skalakan`.
+   */
+  const porsiTersimpan = brandPengajuan(g.id);
+  const bagian =
+    porsiTersimpan.length > 0
+      ? skalakan(
+          porsiTersimpan.map((p) => p.nominal),
+          nominal,
+        ).map((n, i) => ({ brandId: porsiTersimpan[i].brand_id, nominal: n }))
+      : [{ brandId: g.brand_id, nominal }];
+  const grup = bagian.length > 1 ? crypto.randomUUID() : null;
+
   const now = new Date().toISOString();
   let txId: number;
   try {
     txId = inTransaction(() => {
-      const res =
-        g.tujuan === "dompet"
-          ? run(
-              `INSERT INTO transaksi (tanggal, jenis, nominal, dompet_id, pengajuan_id,
-                                      keterangan, no_ref, created_by, created_at)
-               VALUES (?, 'topup', ?, ?, ?, ?, ?, ?, ?)`,
-              tanggalBayar, nominal, g.dompet_id, g.id,
-              g.keterangan, str(fd, "no_ref"), me.id, now,
-            )
-          : run(
-              `INSERT INTO transaksi (tanggal, jenis, nominal, sumber, divisi_id, platform_id,
-                                      brand_id, penerima_id, pengajuan_id, keterangan, no_ref,
-                                      created_by, created_at)
-               VALUES (?, 'belanja', ?, 'finance', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-              tanggalBayar, nominal, g.divisi_id, g.platform_id, g.brand_id,
-              g.penerima_id, g.id, g.keterangan, str(fd, "no_ref"), me.id, now,
-            );
+      let head = 0;
+      for (const b of bagian) {
+        const res =
+          g.tujuan === "dompet"
+            ? run(
+                `INSERT INTO transaksi (tanggal, jenis, nominal, dompet_id, brand_id,
+                                        pengajuan_id, keterangan, no_ref, split_group,
+                                        created_by, created_at)
+                 VALUES (?, 'topup', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                tanggalBayar, b.nominal, g.dompet_id, b.brandId, g.id,
+                g.keterangan, str(fd, "no_ref"), grup, me.id, now,
+              )
+            : run(
+                `INSERT INTO transaksi (tanggal, jenis, nominal, sumber, divisi_id, platform_id,
+                                        brand_id, penerima_id, pengajuan_id, keterangan, no_ref,
+                                        split_group, created_by, created_at)
+                 VALUES (?, 'belanja', ?, 'finance', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                tanggalBayar, b.nominal, g.divisi_id, g.platform_id, b.brandId,
+                g.penerima_id, g.id, g.keterangan, str(fd, "no_ref"), grup, me.id, now,
+              );
+        // Bukti menempel pada pecahan pertama: buktinya milik pembayarannya,
+        // bukan milik salah satu porsi.
+        if (head === 0) head = Number(res.lastInsertRowid);
+      }
       run(
         `UPDATE pengajuan SET status = 'dibayar', tanggal_bayar = ?, nominal_cair = ?,
                 catatan = ?, updated_at = ? WHERE id = ?`,
@@ -886,7 +1016,7 @@ export async function setPengajuanStatus(
         now,
         id,
       );
-      return Number(res.lastInsertRowid);
+      return head;
     });
   } catch (e) {
     return { ok: false, error: `Gagal mencatat pembayaran: ${(e as Error).message}` };
@@ -901,7 +1031,9 @@ export async function setPengajuanStatus(
   const masalahBukti = await saveBukti(txId, files, me);
   if (attachmentsOf(txId).length === 0) {
     inTransaction(() => {
-      run(`DELETE FROM transaksi WHERE id = ?`, txId);
+      // Seluruh pecahannya, bukan cuma yang memegang bukti: pembagian yang
+      // tersisa separuh akan menjumlah lebih kecil dari uang yang cair.
+      run(`DELETE FROM transaksi WHERE pengajuan_id = ?`, id);
       run(
         `UPDATE pengajuan SET status = ?, tanggal_bayar = NULL, nominal_cair = NULL,
                 updated_at = ? WHERE id = ?`,
@@ -917,7 +1049,8 @@ export async function setPengajuanStatus(
   logActivity(
     me,
     "bayar-pengajuan",
-    `#${id} ${fmtIdr(nominal)} → ${g.tujuan === "dompet" ? `top-up ${g.dompet_name}` : "belanja"}`,
+    `#${id} ${fmtIdr(nominal)} → ${g.tujuan === "dompet" ? `top-up ${g.dompet_name}` : "belanja"}` +
+      (bagian.length > 1 ? `, dibagi ke ${bagian.length} brand` : ""),
   );
   await touchSession(me);
   refresh();
@@ -928,6 +1061,11 @@ export async function setPengajuanStatus(
       (g.tujuan === "dompet"
         ? `Dana ${fmtIdr(nominal)} masuk ${g.dompet_name}. Belanjanya dicatat menyusul dari input harian.`
         : `Belanja ${fmtIdr(nominal)} tercatat.`) +
+      (bagian.length > 1
+        ? ` Dibagi jadi ${bagian.length} baris: ${bagian
+            .map((b, i) => `${porsiTersimpan[i].brand_name} ${fmtIdr(b.nominal)}`)
+            .join(", ")}.`
+        : "") +
       ` ${jumlahBukti} bukti terlampir.` +
       // Sebagian bukti gagal bukan alasan menggagalkan pencatatannya, tapi harus
       // dikatakan — yang gagal perlu diunggah ulang dari halaman detail.

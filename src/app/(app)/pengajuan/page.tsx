@@ -141,9 +141,11 @@ export default async function PengajuanListPage({
                     <Link href={`/pengajuan/${r.id}`} className="hover:underline">
                       {r.keterangan}
                     </Link>
-                    {r.brand_name && (
+                    {(r.brand_count > 0 ? r.brand_ringkas : r.brand_name) && (
                       <span className="mt-0.5 block text-xs text-[var(--text-muted)]">
-                        {r.brand_name}
+                        {r.brand_count > 0
+                          ? `${r.brand_count} brand · ${r.brand_ringkas}`
+                          : r.brand_name}
                       </span>
                     )}
                   </td>

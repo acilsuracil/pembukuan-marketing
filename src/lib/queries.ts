@@ -15,6 +15,7 @@ import type {
   MutasiRow,
   Opname,
   Penerima,
+  PengajuanBrand,
   PengajuanRow,
   PengajuanStatus,
   Platform,
@@ -130,6 +131,16 @@ export function masterUsage(
   const inTx =
     one<{ n: number }>(`SELECT COUNT(*) AS n FROM transaksi WHERE ${col} = ?`, id)?.n ??
     0;
+  // Brand juga bisa terpakai sebagai porsi pembagian, bukan cuma sebagai kolom
+  // langsung — tanpa ini, brand yang dipakai pembagian akan tampak belum
+  // terpakai dan ditawarkan untuk dihapus.
+  const inPorsi =
+    kind === "brand"
+      ? (one<{ n: number }>(
+          `SELECT COUNT(*) AS n FROM pengajuan_brand WHERE brand_id = ?`,
+          id,
+        )?.n ?? 0)
+      : 0;
   const inPengajuan =
     kind === "akun_iklan"
       ? 0
@@ -137,7 +148,7 @@ export function masterUsage(
           `SELECT COUNT(*) AS n FROM pengajuan WHERE ${col} = ?`,
           id,
         )?.n ?? 0);
-  return inTx + inPengajuan;
+  return inTx + inPengajuan + inPorsi;
 }
 
 /* ------------------------------------------------------ master + statistik */
@@ -587,7 +598,13 @@ const PENGAJUAN_SELECT = `
          p.name    AS platform_name,
          d.name    AS divisi_name,
          u.username AS created_by_name,
-         (SELECT COUNT(*) FROM transaksi t WHERE t.pengajuan_id = g.id) AS tx_count
+         (SELECT COUNT(*) FROM transaksi t WHERE t.pengajuan_id = g.id) AS tx_count,
+         (SELECT COUNT(*) FROM pengajuan_brand pb WHERE pb.pengajuan_id = g.id)
+           AS brand_count,
+         (SELECT group_concat(b2.name, ', ')
+            FROM pengajuan_brand pb
+            JOIN brand b2 ON b2.id = pb.brand_id
+           WHERE pb.pengajuan_id = g.id) AS brand_ringkas
   FROM pengajuan g
   LEFT JOIN penerima r ON r.id = g.penerima_id
   LEFT JOIN dompet   w ON w.id = g.dompet_id
@@ -665,6 +682,18 @@ export function listPengajuan(f: PengajuanFilter = {}): PengajuanRow[] {
 
 export function getPengajuan(id: number): PengajuanRow | undefined {
   return one<PengajuanRow>(`${PENGAJUAN_SELECT} WHERE g.id = ?`, id);
+}
+
+/** Porsi tiap brand pada pengajuan yang dibagi. Kosong = brand tunggal. */
+export function brandPengajuan(pengajuanId: number): PengajuanBrand[] {
+  return all<PengajuanBrand>(
+    `SELECT pb.*, b.name AS brand_name, b.color_slot
+     FROM pengajuan_brand pb
+     JOIN brand b ON b.id = pb.brand_id
+     WHERE pb.pengajuan_id = ?
+     ORDER BY pb.nominal DESC, b.name COLLATE NOCASE`,
+    pengajuanId,
+  );
 }
 
 export interface PengajuanTally {

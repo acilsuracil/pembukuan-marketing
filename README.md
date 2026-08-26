@@ -51,6 +51,27 @@ menentukan efeknya:
 | `koreksi` | ± | 0 |
 | `transfer_keluar` / `transfer_masuk` | − / + | 0 |
 
+### Satu pengajuan untuk beberapa brand
+
+Di formulir pengajuan ada pilihan **Bagi ke beberapa brand**. Porsinya diisi
+dalam **rupiah**, bukan persen — persen tidak pernah berjumlah pas (33,33% × 3
+kurang sepeser), dan pecahan itu akan muncul lagi sebagai selisih di laporan.
+Ada tombol **Bagi rata** yang membagikan sisanya, jadi jumlahnya selalu pas.
+
+Formulir menahan penyimpanan selama jumlah porsi belum sama dengan nominalnya,
+dan servernya memeriksa ulang hal yang sama.
+
+Saat dana cair, pembagian itu melahirkan **satu baris buku besar per brand**,
+diikat satu penanda grup — bukan satu baris berisi daftar brand. Dengan begitu
+setiap baris tetap punya tepat satu brand, sehingga laporan per brand, matriks,
+filter, dan ekspor CSV tetap benar tanpa diubah sama sekali.
+
+Kalau yang cair berbeda dari yang diminta, porsinya **diskalakan** dengan
+perbandingan yang sama dan sisa pembulatannya jatuh ke porsi terbesar — jumlah
+pecahannya dijamin sama persis dengan uang yang benar-benar cair. Buktinya cukup
+satu, menempel di pecahan pertama: buktinya milik pembayarannya, bukan milik
+salah satu porsi.
+
 ### Pindah saldo antar-dompet
 
 Memindahkan uang dari Bank Jago ke Jenius dicatat sebagai **dua baris

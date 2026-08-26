@@ -110,6 +110,14 @@ const one = (sql, ...p) => {
     d.close();
   }
 };
+const semua = (sql, ...p) => {
+  const d = db();
+  try {
+    return d.prepare(sql).all(...p);
+  } finally {
+    d.close();
+  }
+};
 
 function step(n) {
   langkah.push(n);
@@ -343,6 +351,112 @@ step("Belanja rute langsung dari pengajuan kedua");
   );
 }
 
+step("Pengajuan yang dibagi ke beberapa brand");
+{
+  const dewi = one(`SELECT id FROM penerima`).id;
+  const ads = one(`SELECT id FROM divisi WHERE name='Ads'`).id;
+  const meta = one(`SELECT id FROM platform WHERE name='Meta Ads'`).id;
+
+  // Dua brand baru supaya pembagiannya jelas terbaca di laporan.
+  for (const nama of ["PN138", "TIKTOK88"]) {
+    await submit("/master/brand", 'name="pic"', {
+      name: nama,
+      pic: "",
+      budget_idr: "",
+      note: "",
+      color_slot: "1",
+    });
+  }
+  const a = one(`SELECT id FROM brand WHERE name='PN138'`).id;
+  const b = one(`SELECT id FROM brand WHERE name='TIKTOK88'`).id;
+
+  // Porsi yang jumlahnya tidak pas harus ditolak sebelum apa pun tersimpan.
+  const jumlahSebelum = one(`SELECT COUNT(*) AS n FROM pengajuan`).n;
+  const salah = await submit("/pengajuan/baru", 'name="keterangan"', {
+    tanggal: "2026-08-18",
+    keterangan: "Iklan bersama dua brand",
+    nominal: "4.000.000",
+    tujuan: "langsung",
+    penerima_id: dewi,
+    platform_id: meta,
+    divisi_id: ads,
+    brand_mode: "multi",
+    porsi_brand: [a, b],
+    porsi_nominal: ["3.000.000", "500.000"],
+    catatan: "",
+    status: "diajukan",
+  });
+  checkIncludes("porsi yang tidak pas ditolak", salah.body, "tidak sama dengan nominalnya");
+  check(
+    "pengajuannya tidak tersimpan",
+    one(`SELECT COUNT(*) AS n FROM pengajuan`).n,
+    jumlahSebelum,
+  );
+
+  await submit("/pengajuan/baru", 'name="keterangan"', {
+    tanggal: "2026-08-18",
+    keterangan: "Iklan bersama dua brand",
+    nominal: "4.000.000",
+    tujuan: "langsung",
+    penerima_id: dewi,
+    platform_id: meta,
+    divisi_id: ads,
+    brand_mode: "multi",
+    porsi_brand: [a, b],
+    porsi_nominal: ["2.500.000", "1.500.000"],
+    catatan: "",
+    status: "diajukan",
+  });
+  const pg = one(`SELECT * FROM pengajuan ORDER BY id DESC LIMIT 1`);
+  check("porsi tersimpan dua baris", one(
+    `SELECT COUNT(*) AS n FROM pengajuan_brand WHERE pengajuan_id = ?`, pg.id,
+  ).n, 2);
+  check("brand tunggal dikosongkan", pg.brand_id, null);
+
+  const format = await get(`/pengajuan/${pg.id}`);
+  checkIncludes("format ke finance memuat pembagiannya", format.body, "PN138");
+
+  // Cair kurang dari yang diminta: porsinya diskalakan, jumlahnya tetap pas.
+  await submit(`/pengajuan/${pg.id}`, 'name="tanggal_bayar"', {
+    id: pg.id,
+    status: "dibayar",
+    tanggal_bayar: "2026-08-19",
+    nominal_cair: "2.000.000",
+    no_ref: "TRF-003",
+    bukti: [buktiPalsu("transfer-bersama.png")],
+  });
+
+  const baris = semua(
+    `SELECT brand_name, nominal, split_group, delta_biaya FROM v_transaksi
+     WHERE pengajuan_id = ? ORDER BY nominal DESC`,
+    pg.id,
+  );
+  check("lahir dua baris, satu per brand", baris.length, 2);
+  check("porsi PN138 setelah diskalakan", baris[0].nominal, 1250000);
+  check("porsi TIKTOK88 setelah diskalakan", baris[1].nominal, 750000);
+  check(
+    "jumlah pecahan sama dengan yang cair",
+    baris.reduce((s, r) => s + r.nominal, 0),
+    2000000,
+  );
+  check(
+    "kedua pecahan satu grup",
+    baris[0].split_group !== null && baris[0].split_group === baris[1].split_group,
+    true,
+  );
+  check(
+    "biaya per brand terpisah di laporan",
+    one(
+      `SELECT IFNULL(SUM(delta_biaya),0) AS v FROM v_transaksi WHERE brand_id = ?`, a,
+    ).v,
+    1250000,
+  );
+  check("bukti cukup satu untuk pembayarannya", one(
+    `SELECT COUNT(*) AS n FROM attachments a
+     JOIN transaksi t ON t.id = a.tx_id WHERE t.pengajuan_id = ?`, pg.id,
+  ).n, 1);
+}
+
 step("Pindah saldo Bank Jago → Bank Jenius");
 {
   const jago = one(`SELECT id FROM dompet WHERE name='Bank Jago'`).id;
@@ -382,12 +496,12 @@ step("Halaman ringkasan & laporan menampilkan angka yang sama");
 {
   const ringkasan = await get("/");
   check("status /", ringkasan.status, 200);
-  checkIncludes("total biaya bulan ini", ringkasan.body, rupiah(6006500));
+  checkIncludes("total biaya bulan ini", ringkasan.body, rupiah(8006500));
   checkIncludes("saldo semua dompet", ringkasan.body, rupiah(3493500));
 
   const laporan = await get("/laporan");
   check("status /laporan", laporan.status, 200);
-  checkIncludes("laporan memuat total biaya", laporan.body, rupiah(6006500));
+  checkIncludes("laporan memuat total biaya", laporan.body, rupiah(8006500));
   checkIncludes("laporan menyebut divisi Ads", laporan.body, "Ads");
   checkIncludes("laporan menyebut divisi Endorse", laporan.body, "Endorse");
 

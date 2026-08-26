@@ -15,7 +15,12 @@ import {
 } from "@/lib/format";
 import { rekLine } from "@/lib/opts";
 import { hasPerm } from "@/lib/policy";
-import { attachmentsOf, getPengajuan, listTransaksi } from "@/lib/queries";
+import {
+  attachmentsOf,
+  brandPengajuan,
+  getPengajuan,
+  listTransaksi,
+} from "@/lib/queries";
 import { requireUser } from "@/lib/session";
 
 export default async function PengajuanDetailPage({
@@ -30,6 +35,7 @@ export default async function PengajuanDetailPage({
   if (!g) notFound();
 
   const rows = listTransaksi({ pengajuanId: g.id });
+  const porsi = brandPengajuan(g.id);
 
   const rek =
     g.tujuan === "dompet"
@@ -93,7 +99,12 @@ export default async function PengajuanDetailPage({
                 ["Rekening tujuan", rek],
                 ["Divisi", g.divisi_name ?? "–"],
                 ["Platform", g.platform_name ?? "–"],
-                ["Brand", g.brand_name ?? "–"],
+                [
+                  "Brand",
+                  porsi.length > 0
+                    ? porsi.map((p) => `${p.brand_name} ${fmtIdr(p.nominal)}`).join(" · ")
+                    : (g.brand_name ?? "–"),
+                ],
                 ["Catatan internal", g.catatan || "–"],
                 ["Dibuat", `${fmtDateTime(g.created_at)} oleh ${g.created_by_name ?? "–"}`],
               ].map(([k, v]) => (

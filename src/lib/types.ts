@@ -157,6 +157,20 @@ export interface PengajuanRow {
   created_by_name: string | null;
   /** Jumlah baris buku besar yang lahir dari pengajuan ini. */
   tx_count: number;
+  /** Jumlah brand pada pembagian. 0 = brand tunggal lewat `brand_id`. */
+  brand_count: number;
+  /** Nama brand pembagian, dipisah koma — untuk ringkasan di daftar. */
+  brand_ringkas: string | null;
+}
+
+/** Porsi satu brand dalam pengajuan yang dibagi ke beberapa brand. */
+export interface PengajuanBrand {
+  id: number;
+  pengajuan_id: number;
+  brand_id: number;
+  nominal: number;
+  brand_name: string;
+  color_slot: number;
 }
 
 /* ------------------------------------------------------------ buku besar */

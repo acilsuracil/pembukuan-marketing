@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { connection } from "next/server";
 import PengajuanForm from "@/components/PengajuanForm";
 import { formOptions } from "@/lib/opts";
-import { getPengajuan } from "@/lib/queries";
+import { brandPengajuan, getPengajuan } from "@/lib/queries";
 import { requirePerm } from "@/lib/session";
 
 export default async function PengajuanUbahPage({
@@ -33,7 +33,7 @@ export default async function PengajuanUbahPage({
         </p>
       </div>
 
-      <PengajuanForm initial={g} {...formOptions()} />
+      <PengajuanForm initial={g} porsiAwal={brandPengajuan(g.id)} {...formOptions()} />
     </div>
   );
 }

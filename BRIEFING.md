@@ -73,6 +73,10 @@ semuanya masih benar:
 2. **Transfer selalu dua baris berpasangan** (`pasangan_id`), satu baris tetap
    milik tepat satu dompet. Tidak bisa dibuat satu sisi, tidak bisa diubah satu
    sisi, dan hapusnya mengambil dua-duanya.
+2b. **Pembagian brand ditulis sebagai satu baris per brand** (`split_group`),
+   porsinya dalam rupiah — bukan persen — dan jumlahnya wajib sama persis dengan
+   nominalnya (`pengajuan_brand`). Kalau yang cair berbeda, pakai `skalakan()`
+   di `lib/split.ts`; jangan hitung ulang dengan pembulatan sendiri.
 3. **Dana cair wajib berbukti.** Bukti divalidasi sebelum apa pun ditulis; kalau
    seluruh unggahan gagal, pencatatan dibatalkan. Bukti terakhir dari baris yang
    lahir dari pengajuan tidak bisa dihapus.

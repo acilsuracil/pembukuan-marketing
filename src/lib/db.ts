@@ -308,6 +308,25 @@ function migrate(db: DatabaseSync) {
       CHECK (tujuan <> 'dompet' OR dompet_id IS NOT NULL)
     );
 
+    -- Satu permintaan dana yang dipakai beberapa brand: porsinya ditulis di sini,
+    -- satu baris per brand, dalam rupiah — bukan persen.
+    --
+    -- Persen tidak pernah berjumlah pas: 33,33% × 3 kurang sepeser dari nominal,
+    -- dan pecahan itu akan muncul lagi sebagai selisih di laporan. Porsi rupiah
+    -- bisa diperiksa sama-persis dengan nominalnya, dan itu yang ditegakkan.
+    --
+    -- Dipakai hanya kalau brand-nya lebih dari satu; satu brand tetap memakai
+    -- kolom brand_id di pengajuan, jadi pengajuan lama tidak berubah artinya.
+    CREATE TABLE IF NOT EXISTS pengajuan_brand (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      pengajuan_id INTEGER NOT NULL REFERENCES pengajuan(id) ON DELETE CASCADE,
+      -- RESTRICT, bukan CASCADE: menghapus brand yang punya porsi akan membuat
+      -- jumlah porsi tidak lagi sama dengan nominalnya, diam-diam.
+      brand_id     INTEGER NOT NULL REFERENCES brand(id) ON DELETE RESTRICT,
+      nominal      INTEGER NOT NULL CHECK (nominal > 0),
+      UNIQUE (pengajuan_id, brand_id)
+    );
+
     /* ------------------------------------------------------- buku besar */
 
     CREATE TABLE IF NOT EXISTS transaksi (
@@ -409,6 +428,8 @@ function migrate(db: DatabaseSync) {
     CREATE INDEX IF NOT EXISTS idx_tr_dompet   ON transaksi (dompet_id, tanggal, id);
     CREATE INDEX IF NOT EXISTS idx_tr_pengaju  ON transaksi (pengajuan_id);
     CREATE INDEX IF NOT EXISTS idx_pg_status   ON pengajuan (status, tanggal DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_pgb_pengaju ON pengajuan_brand (pengajuan_id);
+    CREATE INDEX IF NOT EXISTS idx_pgb_brand   ON pengajuan_brand (brand_id);
     CREATE INDEX IF NOT EXISTS idx_op_dompet   ON dompet_opname (dompet_id, tanggal DESC);
     CREATE INDEX IF NOT EXISTS idx_att_tx      ON attachments (tx_id);
     CREATE INDEX IF NOT EXISTS idx_log_ts      ON activity_log (ts DESC);

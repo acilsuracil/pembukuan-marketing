@@ -6,7 +6,8 @@ import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { savePengajuan, type ActionState } from "@/app/actions";
 import { fmtIdr, todayISO } from "@/lib/format";
 import { parseRupiah } from "@/lib/num";
-import type { PengajuanRow, Tujuan } from "@/lib/types";
+import { bagiRata } from "@/lib/split";
+import type { PengajuanBrand, PengajuanRow, Tujuan } from "@/lib/types";
 import CopyBox from "./CopyBox";
 import MoneyField from "./MoneyField";
 import { Alert, FormButton } from "./ui";
@@ -22,8 +23,16 @@ export interface Opt {
   rek?: string;
 }
 
+/** Satu baris pembagian di formulir. `key` hanya untuk React. */
+interface Porsi {
+  key: number;
+  brandId: string;
+  nominal: string;
+}
+
 export default function PengajuanForm({
   initial,
+  porsiAwal = [],
   penerima,
   dompet,
   brand,
@@ -31,6 +40,8 @@ export default function PengajuanForm({
   divisi,
 }: {
   initial?: PengajuanRow;
+  /** Pembagian yang sudah tersimpan, saat mengubah pengajuan. */
+  porsiAwal?: PengajuanBrand[];
   penerima: Opt[];
   dompet: Opt[];
   brand: Opt[];
@@ -53,6 +64,36 @@ export default function PengajuanForm({
   const [platformId, setPlatformId] = useState(String(initial?.platform_id ?? ""));
   const [divisiId, setDivisiId] = useState(String(initial?.divisi_id ?? ""));
 
+  // Pembagian ke beberapa brand. Penomor kunci baris hidup di ref, bukan state:
+  // ia tidak pernah memengaruhi tampilan, dan state yang ikut jadi dependency
+  // effect pernah membuat lingkaran render di formulir lain.
+  const [multi, setMulti] = useState(porsiAwal.length > 0);
+  const porsiKey = useRef(porsiAwal.length);
+  const [porsi, setPorsi] = useState<Porsi[]>(() =>
+    porsiAwal.length > 0
+      ? porsiAwal.map((p, i) => ({
+          key: i,
+          brandId: String(p.brand_id),
+          nominal: String(p.nominal),
+        }))
+      : [
+          { key: 0, brandId: "", nominal: "" },
+          { key: 1, brandId: "", nominal: "" },
+        ],
+  );
+  const barisBaru = () => ({
+    key: (porsiKey.current += 1),
+    brandId: "",
+    nominal: "",
+  });
+
+  const nominalAngka = parseRupiah(nominalText) ?? 0;
+  const jumlahPorsi = porsi.reduce((s, p) => s + (parseRupiah(p.nominal) ?? 0), 0);
+  const selisih = jumlahPorsi - nominalAngka;
+  const porsiTerisi = porsi.filter(
+    (p) => p.brandId !== "" && (parseRupiah(p.nominal) ?? 0) > 0,
+  ).length;
+
   useEffect(() => {
     if (!state.ok) return;
     if (editing) router.push(`/pengajuan/${initial!.id}`);
@@ -73,17 +114,29 @@ export default function PengajuanForm({
       tujuan === "dompet"
         ? (dompet.find((d) => String(d.id) === dompetId)?.rek ?? "")
         : (penerima.find((p) => String(p.id) === penerimaId)?.rek ?? "");
+    // Pembagian ikut ditulis ke finance apa adanya: merekalah yang mentransfer,
+    // dan porsi yang cuma hidup di panel akan jadi tebakan saat dicocokkan nanti.
+    const barisBrand = multi
+      ? porsi
+          .filter((p) => p.brandId !== "")
+          .map((p) => {
+            const n = parseRupiah(p.nominal);
+            return `${label(brand, p.brandId)} ${n === null ? "—" : fmtIdr(n)}`;
+          })
+          .join(" + ")
+      : label(brand, brandId);
+
     return [
       `Keterangan : ${keterangan || "—"}`,
       `Nominal : ${nominal === null ? "—" : fmtIdr(nominal)}`,
       `Rekening : ${rek || "—"}`,
-      `Brand : ${label(brand, brandId) || "—"}`,
+      `Brand : ${barisBrand || "—"}`,
       `Platform : ${label(platform, platformId) || "—"}`,
       `Divisi : ${label(divisi, divisiId) || "—"}`,
     ].join("\n");
   }, [
     keterangan, nominalText, tujuan, dompetId, penerimaId, brandId, platformId,
-    divisiId, brand, platform, divisi, dompet, penerima,
+    divisiId, brand, platform, divisi, dompet, penerima, multi, porsi,
   ]);
 
   return (
@@ -287,18 +340,176 @@ export default function PengajuanForm({
               id="p-brand"
               name="brand_id"
               className="field"
-              value={brandId}
+              value={multi ? "" : brandId}
+              disabled={multi}
               onChange={(e) => setBrandId(e.target.value)}
             >
-              <option value="">— tanpa brand —</option>
+              <option value="">{multi ? "— dibagi beberapa brand —" : "— tanpa brand —"}</option>
               {brand.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.label}
                 </option>
               ))}
             </select>
+            <label className="mt-1.5 flex cursor-pointer items-center gap-1.5 text-xs">
+              <input
+                type="checkbox"
+                checked={multi}
+                onChange={(e) => setMulti(e.target.checked)}
+              />
+              Bagi ke beberapa brand
+            </label>
           </div>
         </div>
+
+        {/* Mode dikirim sebagai kolom sendiri, bukan disimpulkan dari ada-tidaknya
+            baris porsi: pembagian yang dimatikan harus benar-benar terhapus di
+            server, bukan tertinggal karena kolomnya kebetulan tidak terkirim. */}
+        <input type="hidden" name="brand_mode" value={multi ? "multi" : "tunggal"} />
+
+        {multi && (
+          <fieldset className="rounded-lg border border-[var(--hairline)] p-3">
+            <legend className="label px-1">Pembagian per brand</legend>
+
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-[var(--text-muted)]">
+                  <th className="pb-1 font-medium">Brand</th>
+                  <th className="pb-1 font-medium">Porsi</th>
+                  <th className="pb-1" />
+                </tr>
+              </thead>
+              <tbody>
+                {porsi.map((p, i) => {
+                  const n = p.nominal.trim() === "" ? null : parseRupiah(p.nominal);
+                  return (
+                    <tr key={p.key}>
+                      <td className="py-1 pr-2">
+                        <select
+                          name="porsi_brand"
+                          className="field py-1.5 text-xs"
+                          value={p.brandId}
+                          aria-label={`Brand baris ${i + 1}`}
+                          onChange={(e) =>
+                            setPorsi((rs) =>
+                              rs.map((r) =>
+                                r.key === p.key ? { ...r, brandId: e.target.value } : r,
+                              ),
+                            )
+                          }
+                        >
+                          <option value="">— pilih brand —</option>
+                          {brand.map((b) => (
+                            <option key={b.id} value={b.id}>
+                              {b.label}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="py-1 pr-2">
+                        <input
+                          name="porsi_nominal"
+                          type="text"
+                          inputMode="numeric"
+                          autoComplete="off"
+                          className="field tnum py-1.5 text-xs"
+                          placeholder="0"
+                          value={p.nominal}
+                          aria-label={`Porsi baris ${i + 1}`}
+                          onChange={(e) =>
+                            setPorsi((rs) =>
+                              rs.map((r) =>
+                                r.key === p.key ? { ...r, nominal: e.target.value } : r,
+                              ),
+                            )
+                          }
+                        />
+                        {p.nominal.trim() !== "" && (
+                          <span
+                            className="tnum mt-0.5 block text-[11px]"
+                            style={{
+                              color:
+                                n === null
+                                  ? "var(--status-critical)"
+                                  : "var(--text-muted)",
+                            }}
+                          >
+                            {n === null ? "tidak terbaca" : fmtIdr(n)}
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-1 text-right">
+                        <button
+                          type="button"
+                          className="btn btn-ghost px-2 py-1 text-xs"
+                          aria-label={`Buang baris ${i + 1}`}
+                          onClick={() =>
+                            setPorsi((rs) =>
+                              rs.length > 2 ? rs.filter((r) => r.key !== p.key) : rs,
+                            )
+                          }
+                        >
+                          ✕
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+
+            <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-[var(--hairline)] pt-2">
+              <button
+                type="button"
+                className="btn btn-ghost px-2.5 py-1 text-xs"
+                onClick={() => setPorsi((rs) => [...rs, barisBaru()])}
+              >
+                + Tambah brand
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost px-2.5 py-1 text-xs"
+                disabled={nominalAngka <= 0}
+                onClick={() => {
+                  // Bagi rata memakai pembagi yang sama dengan server, jadi
+                  // sisanya jatuh ke baris yang sama pula.
+                  const rata = bagiRata(nominalAngka, porsi.length);
+                  setPorsi((rs) =>
+                    rs.map((r, i) => ({ ...r, nominal: String(rata[i] ?? 0) })),
+                  );
+                }}
+              >
+                Bagi rata
+              </button>
+
+              <span className="ml-auto text-xs">
+                <span className="text-[var(--text-muted)]">Jumlah porsi </span>
+                <span className="tnum font-medium">{fmtIdr(jumlahPorsi)}</span>
+                {nominalAngka > 0 && (
+                  <span
+                    className="tnum ml-2"
+                    style={{
+                      color:
+                        selisih === 0
+                          ? "var(--success-text)"
+                          : "var(--status-critical)",
+                    }}
+                  >
+                    {selisih === 0
+                      ? "pas"
+                      : `${selisih > 0 ? "lebih" : "kurang"} ${fmtIdr(Math.abs(selisih))}`}
+                  </span>
+                )}
+              </span>
+            </div>
+
+            <p className="hint">
+              Porsinya diisi dalam rupiah, bukan persen — persen tidak pernah
+              berjumlah pas, dan pecahannya muncul lagi sebagai selisih di laporan.
+              Saat dana cair, tiap brand jadi satu baris buku besar sendiri.
+            </p>
+          </fieldset>
+        )}
 
         <div>
           <label className="label" htmlFor="p-catatan">
@@ -331,8 +542,20 @@ export default function PengajuanForm({
         )}
 
         <div className="flex gap-2 pt-1">
-          <FormButton pendingLabel="Menyimpan…">
-            {editing ? "Simpan perubahan" : "Simpan pengajuan"}
+          {/* Pembagian yang belum pas ditahan di sini juga, bukan hanya di server:
+              tombol yang bisa ditekan lalu ditolak membuat orang menebak-nebak
+              apa yang salah. Servernya tetap memeriksa ulang. */}
+          <FormButton
+            pendingLabel="Menyimpan…"
+            disabled={multi && (selisih !== 0 || porsiTerisi < 2)}
+          >
+            {multi && porsiTerisi < 2
+              ? "Pilih minimal dua brand"
+              : multi && selisih !== 0
+                ? `Porsi ${selisih > 0 ? "lebih" : "kurang"} ${fmtIdr(Math.abs(selisih))}`
+                : editing
+                  ? "Simpan perubahan"
+                  : "Simpan pengajuan"}
           </FormButton>
           <Link
             href={editing ? `/pengajuan/${initial!.id}` : "/pengajuan"}
