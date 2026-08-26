@@ -5,10 +5,13 @@ import path from "node:path";
 const DATA_DIR_EXPLICIT = Boolean(
   process.env.MARKETING_DATA_DIR ?? process.env.LEDGER_DATA_DIR,
 );
-const DATA_DIR =
+// `turbopackIgnore` menahan penelusur berkas Turbopack: letak folder data baru
+// diketahui saat runtime, dan tanpa penanda ini ia menyeret seluruh folder
+// proyek ke dalam trace keluaran build.
+export const DATA_DIR =
   process.env.MARKETING_DATA_DIR ??
   process.env.LEDGER_DATA_DIR ??
-  path.join(process.cwd(), "data");
+  path.join(/*turbopackIgnore: true*/ process.cwd(), "data");
 const DB_PATH = path.join(DATA_DIR, "marketing.db");
 export const BUKTI_DIR = path.join(DATA_DIR, "bukti");
 
@@ -26,7 +29,7 @@ export const DATA_DIR_ENV = "MARKETING_DATA_DIR";
 export function dataDirHealth() {
   const insideApp = path
     .resolve(DATA_DIR)
-    .startsWith(path.resolve(process.cwd()) + path.sep);
+    .startsWith(path.resolve(/*turbopackIgnore: true*/ process.cwd()) + path.sep);
   let dbCreatedAt: string | null = null;
   let sizeBytes = 0;
   try {

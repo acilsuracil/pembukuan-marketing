@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { BUKTI_DIR } from "./db";
+import { BUKTI_DIR, DATA_DIR } from "./db";
 
 /**
  * Penyimpanan bukti transfer.
@@ -13,6 +13,12 @@ import { BUKTI_DIR } from "./db";
  * Bucket-nya sengaja dibuat PRIVAT: berkas diambil server lalu diteruskan lewat
  * /api/bukti/[id] yang memeriksa sesi. Bucket publik berarti siapa pun yang
  * memegang URL-nya bisa melihat bukti transfer tanpa login.
+ *
+ * Penanda `turbopackIgnore` di panggilan fs bukan hiasan: path-nya dirakit saat
+ * runtime dari DATA_DIR (isi env / volume), jadi penelusur berkas Turbopack
+ * menyerah dan memilih menyeret seluruh folder proyek ke dalam trace keluaran.
+ * Penanda itu memberitahunya bahwa path ini memang tidak bisa diketahui saat
+ * build, dan tidak perlu ditebak.
  */
 export type StorageBackend = "local" | "supabase";
 
@@ -58,7 +64,7 @@ function objectPath(name: string, folder?: string): string {
 
 function localPath(name: string, folder?: string): string {
   const f = safeFolder(folder);
-  return f ? path.join(BUKTI_DIR, "..", f, name) : path.join(BUKTI_DIR, name);
+  return f ? path.join(DATA_DIR, f, name) : path.join(BUKTI_DIR, name);
 }
 
 function supaHeaders(extra: Record<string, string> = {}) {
@@ -95,8 +101,8 @@ export async function putObject(
   }
 
   const dest = localPath(name, folder);
-  await fs.mkdir(path.dirname(dest), { recursive: true });
-  await fs.writeFile(dest, data);
+  await fs.mkdir(/*turbopackIgnore: true*/ path.dirname(dest), { recursive: true });
+  await fs.writeFile(/*turbopackIgnore: true*/ dest, data);
   return "local";
 }
 
@@ -121,7 +127,7 @@ export async function getObject(
   }
 
   try {
-    return { body: await fs.readFile(localPath(name, folder)), mime: null };
+    return { body: await fs.readFile(/*turbopackIgnore: true*/ localPath(name, folder)), mime: null };
   } catch {
     return null;
   }
@@ -154,7 +160,7 @@ export async function deleteObject(
   }
 
   try {
-    await fs.unlink(localPath(name, folder));
+    await fs.unlink(/*turbopackIgnore: true*/ localPath(name, folder));
   } catch {
     // berkas sudah tidak ada
   }
@@ -192,12 +198,12 @@ export async function listObjects(folder: string): Promise<StoredObject[]> {
       .map((x) => ({ name: x.name, size: x.metadata?.size ?? 0 }));
   }
 
-  const dir = path.join(BUKTI_DIR, "..", f);
+  const dir = path.join(DATA_DIR, f);
   try {
-    const names = await fs.readdir(dir);
+    const names = await fs.readdir(/*turbopackIgnore: true*/ dir);
     const out: StoredObject[] = [];
     for (const n of names) {
-      const st = await fs.stat(path.join(dir, n));
+      const st = await fs.stat(/*turbopackIgnore: true*/ path.join(dir, n));
       if (st.isFile()) out.push({ name: n, size: st.size });
     }
     return out;

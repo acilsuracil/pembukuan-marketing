@@ -1,6 +1,17 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import type { NextConfig } from "next";
 
+// Folder induk repo ini menyimpan package-lock.json proyek lain, sehingga Turbopack
+// salah menebak root workspace dan mencetak jalur berkas relatif terhadap folder
+// yang keliru. Pin ke folder aplikasi ini.
+const projectRoot = path.dirname(fileURLToPath(import.meta.url));
+
 const nextConfig: NextConfig = {
+  turbopack: {
+    root: projectRoot,
+  },
   experimental: {
     serverActions: {
       // Bukti transfer sampai 5 MB per berkas, beberapa sekaligus, plus

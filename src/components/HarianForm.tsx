@@ -76,9 +76,11 @@ export default function HarianForm({
    * menaikkan nomornya, nomornya jadi dependency effect itu, effect berjalan
    * lagi, sampai React menyerah dengan "Maximum update depth exceeded".
    */
-  const keyRef = useRef(0);
+  // Tiga baris pertama diberi kunci tetap supaya penomornya tidak perlu dibaca
+  // saat render — membaca ref ketika render adalah pola yang dilarang React.
+  const keyRef = useRef(3);
   const freshRow = () => blank((keyRef.current += 1));
-  const [rows, setRows] = useState<Row[]>(() => [freshRow(), freshRow(), freshRow()]);
+  const [rows, setRows] = useState<Row[]>(() => [blank(1), blank(2), blank(3)]);
 
   // Satu hasil simpan diproses tepat sekali: yang dibandingkan objek state-nya,
   // bukan nilai `ok`-nya, supaya render ulang apa pun sesudahnya tidak memicu
@@ -92,7 +94,6 @@ export default function HarianForm({
     setRows([freshRow(), freshRow(), freshRow()]);
     router.refresh();
     // freshRow sengaja tidak jadi dependency: ia hanya menaikkan penomor di ref.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, router]);
 
   function patch(key: number, part: Partial<Row>) {
