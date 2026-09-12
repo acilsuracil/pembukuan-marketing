@@ -5,6 +5,7 @@ import {
   listBrand,
   listDivisi,
   listDompet,
+  listJenisBayar,
   listPenerima,
   listPlatform,
   saldoDompet,
@@ -59,6 +60,7 @@ export interface TxOptions {
   dompet: TxOpt[];
   akun: TxOpt[];
   penerima: TxOpt[];
+  jenisBayar: TxOpt[];
 }
 
 /** Pilihan untuk formulir transaksi & filter daftar belanja. */
@@ -82,6 +84,7 @@ export function txOptions(): TxOptions {
       id: p.id,
       label: rekLine(p.bank, p.no_rek, p.nama),
     })),
+    jenisBayar: listJenisBayar().map((j) => ({ id: j.id, label: j.name })),
   };
 }
 

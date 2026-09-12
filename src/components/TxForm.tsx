@@ -42,6 +42,7 @@ export default function TxForm({
   dompet,
   akun,
   penerima,
+  jenisBayar,
   /** Nilai awal saat membuka form dari halaman dompet. */
   presetDompetId,
   presetJenis,
@@ -54,6 +55,7 @@ export default function TxForm({
   dompet: TxOpt[];
   akun: TxOpt[];
   penerima: TxOpt[];
+  jenisBayar: TxOpt[];
   presetDompetId?: number;
   presetJenis?: Jenis;
   backHref?: string;
@@ -285,6 +287,31 @@ export default function TxForm({
               </select>
             </div>
           </div>
+
+          {(jenis === "belanja" || jenis === "refund") && (
+            <div>
+              <label className="label" htmlFor="t-jenis-bayar">
+                Jenis pembayaran
+              </label>
+              <select
+                id="t-jenis-bayar"
+                name="jenis_bayar_id"
+                className="field"
+                defaultValue={String(initial?.jenis_bayar_id ?? "")}
+              >
+                <option value="">— tanpa jenis pembayaran —</option>
+                {jenisBayar.map((j) => (
+                  <option key={j.id} value={j.id}>
+                    {j.label}
+                  </option>
+                ))}
+              </select>
+              <p className="hint">
+                Sebutan kerjanya: Perpanjang, Gajian, Pelunasan. Tidak
+                mempengaruhi saldo maupun total biaya.
+              </p>
+            </div>
+          )}
 
           {jenis === "belanja" && (
             <div className="grid gap-4 sm:grid-cols-2">

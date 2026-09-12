@@ -205,6 +205,23 @@ function migrate(db: DatabaseSync) {
       created_at TEXT    NOT NULL
     );
 
+    -- Jenis pembayaran: Perpanjang, Pembayaran, Gajian, Pelunasan, Kontrak Baru.
+    --
+    -- Ini BUKAN kolom 'jenis' di transaksi. Kolom itu menyatakan arah uang
+    -- (topup/belanja/refund) dan ikut menentukan saldo, jadi daftarnya ditutup
+    -- di CHECK dan tidak boleh bertambah tanpa mengubah rumusnya. Yang ini
+    -- sebutan kerja sehari-hari untuk pengeluaran yang sama — tidak
+    -- mempengaruhi angka mana pun, dan memang perlu bebas ditambah sendiri.
+    CREATE TABLE IF NOT EXISTS jenis_bayar (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      name       TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+      color_slot INTEGER NOT NULL DEFAULT 1,
+      budget_idr INTEGER NOT NULL DEFAULT 0,
+      note       TEXT    NOT NULL DEFAULT '',
+      archived   INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT    NOT NULL
+    );
+
     -- Dompet yang kita pegang sendiri (Bank Jago, Jenius). saldo_awal +
     -- tanggal_awal adalah titik nol pembukuannya.
     CREATE TABLE IF NOT EXISTS dompet (
@@ -361,6 +378,7 @@ function migrate(db: DatabaseSync) {
       -- satu dompet, jadi seluruh perhitungan saldo, mutasi, dan opname tetap
       -- benar tanpa diubah sedikit pun. NULL = bukan bagian dari transfer.
       pasangan_id   INTEGER REFERENCES transaksi(id) ON DELETE SET NULL,
+      jenis_bayar_id INTEGER REFERENCES jenis_bayar(id) ON DELETE SET NULL,
       created_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
       created_at    TEXT    NOT NULL,
       updated_at    TEXT,
@@ -444,6 +462,12 @@ function migrate(db: DatabaseSync) {
   addColumn(db, "transaksi", "pasangan_id", "INTEGER REFERENCES transaksi(id)");
   db.exec(`CREATE INDEX IF NOT EXISTS idx_tr_pasangan ON transaksi (pasangan_id)`);
 
+  // Alasannya sama dengan pasangan_id di atas: pembukuan yang sudah berjalan
+  // belum punya kolom ini, dan upgradeTransaksiJenis membangun ulang tabelnya
+  // tanpa membawa kolom di luar daftar salinannya.
+  addColumn(db, "transaksi", "jenis_bayar_id", "INTEGER REFERENCES jenis_bayar(id)");
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_tr_jnsbayar ON transaksi (jenis_bayar_id)`);
+
   db.exec(`
     /*
      * Dua kolom turunan inilah seluruh aturan pembukuan ini:
@@ -478,6 +502,8 @@ function migrate(db: DatabaseSync) {
       r.nama       AS penerima_nama,
       r.bank       AS penerima_bank,
       r.no_rek     AS penerima_no_rek,
+      t.jenis_bayar_id,
+      jb.name      AS jenis_bayar_name,
       u.username   AS created_by_name,
       substr(t.tanggal, 1, 7) AS bulan,
       CASE t.jenis
@@ -507,6 +533,7 @@ function migrate(db: DatabaseSync) {
     LEFT JOIN dompet     w  ON w.id  = t.dompet_id
     LEFT JOIN akun_iklan ai ON ai.id = t.akun_iklan_id
     LEFT JOIN penerima   r  ON r.id  = t.penerima_id
+    LEFT JOIN jenis_bayar jb ON jb.id = t.jenis_bayar_id
     LEFT JOIN users      u  ON u.id  = t.created_by;
 
     /* Saldo tiap dompet: titik nolnya saldo_awal, sisanya akumulasi mutasi. */

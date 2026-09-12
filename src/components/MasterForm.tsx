@@ -8,6 +8,7 @@ import {
   saveBrand,
   saveDivisi,
   saveDompet,
+  saveJenisBayar,
   savePenerima,
   savePlatform,
   type ActionState,
@@ -50,6 +51,7 @@ const ACTIONS = {
   brand: saveBrand,
   penerima: savePenerima,
   dompet: saveDompet,
+  jenis_bayar: saveJenisBayar,
 } as const;
 
 export type MasterFormKind = keyof typeof ACTIONS;

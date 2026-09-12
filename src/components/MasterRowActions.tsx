@@ -13,7 +13,8 @@ export type MasterKind =
   | "brand"
   | "penerima"
   | "dompet"
-  | "akun_iklan";
+  | "akun_iklan"
+  | "jenis_bayar";
 
 /**
  * Tombol per baris data master: ubah, arsipkan, hapus.

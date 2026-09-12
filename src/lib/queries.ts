@@ -11,6 +11,7 @@ import type {
   Dompet,
   GroupSpend,
   Jenis,
+  JenisBayar,
   MonthTotal,
   MutasiRow,
   Opname,
@@ -32,6 +33,17 @@ export function listDivisi(includeArchived = false): Divisi[] {
     `SELECT * FROM divisi ${includeArchived ? "" : "WHERE archived = 0"}
      ORDER BY archived, name COLLATE NOCASE`,
   );
+}
+
+export function listJenisBayar(includeArchived = false): JenisBayar[] {
+  return all<JenisBayar>(
+    `SELECT * FROM jenis_bayar ${includeArchived ? "" : "WHERE archived = 0"}
+     ORDER BY archived, name COLLATE NOCASE`,
+  );
+}
+
+export function getJenisBayar(id: number): JenisBayar | undefined {
+  return one<JenisBayar>(`SELECT * FROM jenis_bayar WHERE id = ?`, id);
 }
 
 export function getDivisi(id: number): Divisi | undefined {
@@ -124,7 +136,14 @@ export function getDompet(id: number): Dompet | undefined {
  * lama (`ON DELETE SET NULL`) dan mengubah laporan periode yang sudah selesai.
  */
 export function masterUsage(
-  kind: "divisi" | "platform" | "brand" | "penerima" | "dompet" | "akun_iklan",
+  kind:
+    | "divisi"
+    | "platform"
+    | "brand"
+    | "penerima"
+    | "dompet"
+    | "akun_iklan"
+    | "jenis_bayar",
   id: number,
 ): number {
   const col = `${kind}_id`;
@@ -141,8 +160,10 @@ export function masterUsage(
           id,
         )?.n ?? 0)
       : 0;
+  // Pengajuan tidak punya kolom akun iklan maupun jenis pembayaran — menanyakannya
+  // ke sana bukan menghasilkan nol, melainkan galat "no such column".
   const inPengajuan =
-    kind === "akun_iklan"
+    kind === "akun_iklan" || kind === "jenis_bayar"
       ? 0
       : (one<{ n: number }>(
           `SELECT COUNT(*) AS n FROM pengajuan WHERE ${col} = ?`,
@@ -173,7 +194,7 @@ export interface MasterStat {
  * refund ikut mengurangi — angka yang sama dengan yang muncul di laporan.
  */
 function masterStats(
-  table: "divisi" | "brand",
+  table: "divisi" | "brand" | "jenis_bayar",
   month: string,
   includeArchived: boolean,
 ): MasterStat[] {
@@ -197,6 +218,13 @@ export function divisiStats(
   includeArchived = true,
 ): MasterStat[] {
   return masterStats("divisi", month, includeArchived);
+}
+
+export function jenisBayarStats(
+  month: string = currentMonth(),
+  includeArchived = true,
+): MasterStat[] {
+  return masterStats("jenis_bayar", month, includeArchived);
 }
 
 export function brandStats(

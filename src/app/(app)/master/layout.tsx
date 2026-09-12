@@ -8,6 +8,8 @@ const TABS: AdminTab[] = [
   { href: "/master/akun-iklan", label: "Akun iklan" },
   { href: "/master/brand", label: "Brand" },
   { href: "/master/penerima", label: "Rekening penerima" },
+  { href: "/master/jenis-bayar", label: "Jenis pembayaran" },
+  { href: "/master/import", label: "Impor CSV" },
 ];
 
 export default async function MasterLayout({
@@ -21,7 +23,8 @@ export default async function MasterLayout({
       <div className="page-header">
         <h1 className="text-xl font-semibold tracking-tight">Data master</h1>
         <p className="mt-0.5 text-sm text-[var(--text-muted)]">
-          Divisi, platform, akun iklan, brand, dan rekening penerima. Yang sudah
+          Divisi, platform, akun iklan, brand, rekening penerima, dan jenis
+          pembayaran. Yang sudah
           terpakai hanya bisa diarsipkan — supaya laporan periode lama tidak
           berubah di belakang hari.
         </p>

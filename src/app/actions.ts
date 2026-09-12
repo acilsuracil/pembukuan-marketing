@@ -184,6 +184,46 @@ export async function saveDivisi(
   return { ok: true, message: idRead.id ? "Divisi diperbarui." : "Divisi ditambahkan." };
 }
 
+export async function saveJenisBayar(
+  _prev: ActionState,
+  fd: FormData,
+): Promise<ActionState> {
+  const me = await authed();
+  if (!me) return DENIED;
+  if (!hasPerm(me, "manageMaster")) return NO_ACCESS;
+
+  const idRead = optionalId(fd, "id", "Jenis pembayaran");
+  if (!idRead.ok) return { ok: false, error: idRead.error };
+  const name = str(fd, "name");
+  if (name.length < 2)
+    return { ok: false, error: "Nama jenis pembayaran minimal 2 karakter." };
+
+  try {
+    if (idRead.id) {
+      run(
+        `UPDATE jenis_bayar SET name = ?, color_slot = ?, note = ? WHERE id = ?`,
+        name, readSlot(fd), str(fd, "note"), idRead.id,
+      );
+    } else {
+      run(
+        `INSERT INTO jenis_bayar (name, color_slot, note, created_at)
+         VALUES (?, ?, ?, ?)`,
+        name, readSlot(fd), str(fd, "note"), new Date().toISOString(),
+      );
+    }
+  } catch (e) {
+    return uniqueError(e, "Jenis pembayaran", name);
+  }
+
+  logActivity(me, idRead.id ? "ubah-jenis-bayar" : "tambah-jenis-bayar", name);
+  await touchSession(me);
+  refresh();
+  return {
+    ok: true,
+    message: idRead.id ? "Jenis pembayaran diperbarui." : "Jenis pembayaran ditambahkan.",
+  };
+}
+
 export async function saveBrand(
   _prev: ActionState,
   fd: FormData,
@@ -422,7 +462,14 @@ export async function saveDompet(
 
 /* --------------------------------------------------- arsip & hapus master */
 
-type MasterKind = "divisi" | "platform" | "brand" | "penerima" | "dompet" | "akun_iklan";
+type MasterKind =
+  | "divisi"
+  | "platform"
+  | "brand"
+  | "penerima"
+  | "dompet"
+  | "akun_iklan"
+  | "jenis_bayar";
 
 const MASTER: Record<MasterKind, { table: string; label: string; perm: "manageMaster" | "manageDompet" }> = {
   divisi: { table: "divisi", label: "Divisi", perm: "manageMaster" },
@@ -430,6 +477,7 @@ const MASTER: Record<MasterKind, { table: string; label: string; perm: "manageMa
   brand: { table: "brand", label: "Brand", perm: "manageMaster" },
   penerima: { table: "penerima", label: "Penerima", perm: "manageMaster" },
   akun_iklan: { table: "akun_iklan", label: "Akun iklan", perm: "manageMaster" },
+  jenis_bayar: { table: "jenis_bayar", label: "Jenis pembayaran", perm: "manageMaster" },
   dompet: { table: "dompet", label: "Dompet", perm: "manageDompet" },
 };
 
@@ -1155,6 +1203,7 @@ interface TxValues {
   brandId: number | null;
   akunIklanId: number | null;
   penerimaId: number | null;
+  jenisBayarId: number | null;
   keterangan: string;
   noRef: string;
 }
@@ -1184,6 +1233,8 @@ function readTx(fd: FormData): { ok: false; error: string } | { ok: true; v: TxV
   if (!akun.ok) return { ok: false, error: akun.error };
   const penerima = optionalId(fd, "penerima_id", "Penerima");
   if (!penerima.ok) return { ok: false, error: penerima.error };
+  const jenisBayar = optionalId(fd, "jenis_bayar_id", "Jenis pembayaran");
+  if (!jenisBayar.ok) return { ok: false, error: jenisBayar.error };
 
   let sumber: Sumber | null = null;
   if (jenis === "belanja") {
@@ -1226,6 +1277,9 @@ function readTx(fd: FormData): { ok: false; error: string } | { ok: true; v: TxV
       brandId: jenis === "belanja" || jenis === "refund" ? brand.id : null,
       akunIklanId: jenis === "belanja" ? akun.id : null,
       penerimaId: jenis === "belanja" ? penerima.id : null,
+      // Sebutan kerja ini hanya melekat pada pengeluaran; top-up atau pindah
+      // saldo tidak punya "jenis pembayaran" yang masuk akal.
+      jenisBayarId: jenis === "belanja" || jenis === "refund" ? jenisBayar.id : null,
       keterangan: str(fd, "keterangan"),
       noRef: str(fd, "no_ref"),
     },
@@ -1268,11 +1322,13 @@ export async function saveTransaksi(
     run(
       `UPDATE transaksi SET tanggal = ?, jenis = ?, nominal = ?, arah = ?, sumber = ?,
               dompet_id = ?, divisi_id = ?, platform_id = ?, brand_id = ?,
-              akun_iklan_id = ?, penerima_id = ?, keterangan = ?, no_ref = ?,
+              akun_iklan_id = ?, penerima_id = ?, jenis_bayar_id = ?,
+              keterangan = ?, no_ref = ?,
               updated_at = ?
        WHERE id = ?`,
       v.tanggal, v.jenis, v.nominal, v.arah, v.sumber, v.dompetId, v.divisiId,
-      v.platformId, v.brandId, v.akunIklanId, v.penerimaId, v.keterangan, v.noRef,
+      v.platformId, v.brandId, v.akunIklanId, v.penerimaId, v.jenisBayarId,
+      v.keterangan, v.noRef,
       new Date().toISOString(), idRead.id,
     );
     logActivity(me, "ubah-transaksi", `#${idRead.id} ${v.jenis} ${fmtIdr(v.nominal)}`);
@@ -1281,10 +1337,12 @@ export async function saveTransaksi(
       run(
         `INSERT INTO transaksi (tanggal, jenis, nominal, arah, sumber, dompet_id,
                                 divisi_id, platform_id, brand_id, akun_iklan_id,
-                                penerima_id, keterangan, no_ref, created_by, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                                penerima_id, jenis_bayar_id, keterangan, no_ref,
+                                created_by, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         v.tanggal, v.jenis, v.nominal, v.arah, v.sumber, v.dompetId, v.divisiId,
-        v.platformId, v.brandId, v.akunIklanId, v.penerimaId, v.keterangan, v.noRef,
+        v.platformId, v.brandId, v.akunIklanId, v.penerimaId, v.jenisBayarId,
+        v.keterangan, v.noRef,
         me.id, new Date().toISOString(),
       );
     } catch (e) {

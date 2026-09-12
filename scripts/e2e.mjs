@@ -10,6 +10,18 @@
 import { DatabaseSync } from "node:sqlite";
 
 const BASE = process.argv[2] ?? "http://localhost:3000";
+
+/**
+ * Bulan untuk seluruh data uji.
+ *
+ * Ringkasan dan laporan menampilkan **bulan berjalan**, sementara data ujinya
+ * dulu memakai tanggal Agustus 2026 yang tetap. Akibatnya suite ini lolos
+ * selama Agustus lalu mulai gagal sendiri begitu bulan berganti — empat
+ * pemeriksaan mencari angka yang memang tidak ada di bulan berjalan.
+ * Diikatkan ke hari ini supaya yang diuji aplikasinya, bukan kalendernya.
+ */
+const BULAN = new Date().toISOString().slice(0, 7);
+const tgl = (hari) => `${BULAN}-${String(hari).padStart(2, "0")}`;
 const DB = process.argv[3];
 
 let cookie = "";
@@ -148,7 +160,7 @@ step("Tambah dua dompet");
     no_rek: "1234567890",
     pemilik: "Berto",
     saldo_awal: "1.000.000",
-    tanggal_awal: "2026-08-01",
+    tanggal_awal: tgl(1),
     min_saldo: "2.000.000",
     note: "",
   });
@@ -159,7 +171,7 @@ step("Tambah dua dompet");
     no_rek: "9876543210",
     pemilik: "Berto",
     saldo_awal: "0",
-    tanggal_awal: "2026-08-01",
+    tanggal_awal: tgl(1),
     min_saldo: "0",
     note: "",
   });
@@ -196,7 +208,7 @@ step("Pengajuan rute dompet, lalu tandai dana cair");
   const meta = one(`SELECT id FROM platform WHERE name='Meta Ads'`).id;
 
   const r = await submit("/pengajuan/baru", 'name="keterangan"', {
-    tanggal: "2026-08-05",
+    tanggal: tgl(5),
     keterangan: "Top-up iklan Meta minggu 3",
     nominal: "5.000.000",
     tujuan: "dompet",
@@ -225,7 +237,7 @@ step("Pengajuan rute dompet, lalu tandai dana cair");
   const tanpaBukti = await submit(`/pengajuan/${pg.id}`, 'name="tanggal_bayar"', {
     id: pg.id,
     status: "dibayar",
-    tanggal_bayar: "2026-08-06",
+    tanggal_bayar: tgl(6),
     nominal_cair: "",
     no_ref: "TRF-001",
   });
@@ -240,7 +252,7 @@ step("Pengajuan rute dompet, lalu tandai dana cair");
   await submit(`/pengajuan/${pg.id}`, 'name="tanggal_bayar"', {
     id: pg.id,
     status: "dibayar",
-    tanggal_bayar: "2026-08-06",
+    tanggal_bayar: tgl(6),
     nominal_cair: "",
     no_ref: "TRF-001",
     bukti: [buktiPalsu("mutasi-jago.png")],
@@ -286,7 +298,7 @@ step("Input harian dompet: tiga baris sekaligus");
   const tiktok = one(`SELECT id FROM platform WHERE name='TikTok'`).id;
 
   const r = await submit("/belanja/harian", 'name="row_nominal"', {
-    tanggal: "2026-08-13",
+    tanggal: tgl(13),
     dompet_id: jago,
     row_platform: [meta, google, tiktok],
     row_divisi: [ads, ads, endorse],
@@ -317,7 +329,7 @@ step("Belanja rute langsung dari pengajuan kedua");
   const ig = one(`SELECT id FROM platform WHERE name='Instagram'`).id;
 
   await submit("/pengajuan/baru", 'name="keterangan"', {
-    tanggal: "2026-08-12",
+    tanggal: tgl(12),
     keterangan: "Endorse Dewi 1 slot IG",
     nominal: "3.500.000",
     tujuan: "langsung",
@@ -333,7 +345,7 @@ step("Belanja rute langsung dari pengajuan kedua");
   await submit(`/pengajuan/${pg.id}`, 'name="tanggal_bayar"', {
     id: pg.id,
     status: "dibayar",
-    tanggal_bayar: "2026-08-14",
+    tanggal_bayar: tgl(14),
     nominal_cair: "",
     no_ref: "TRF-002",
     bukti: [buktiPalsu("transfer-dewi.png"), buktiPalsu("chat-dewi.png")],
@@ -373,7 +385,7 @@ step("Pengajuan yang dibagi ke beberapa brand");
   // Porsi yang jumlahnya tidak pas harus ditolak sebelum apa pun tersimpan.
   const jumlahSebelum = one(`SELECT COUNT(*) AS n FROM pengajuan`).n;
   const salah = await submit("/pengajuan/baru", 'name="keterangan"', {
-    tanggal: "2026-08-18",
+    tanggal: tgl(18),
     keterangan: "Iklan bersama dua brand",
     nominal: "4.000.000",
     tujuan: "langsung",
@@ -394,7 +406,7 @@ step("Pengajuan yang dibagi ke beberapa brand");
   );
 
   await submit("/pengajuan/baru", 'name="keterangan"', {
-    tanggal: "2026-08-18",
+    tanggal: tgl(18),
     keterangan: "Iklan bersama dua brand",
     nominal: "4.000.000",
     tujuan: "langsung",
@@ -420,7 +432,7 @@ step("Pengajuan yang dibagi ke beberapa brand");
   await submit(`/pengajuan/${pg.id}`, 'name="tanggal_bayar"', {
     id: pg.id,
     status: "dibayar",
-    tanggal_bayar: "2026-08-19",
+    tanggal_bayar: tgl(19),
     nominal_cair: "2.000.000",
     no_ref: "TRF-003",
     bukti: [buktiPalsu("transfer-bersama.png")],
@@ -465,7 +477,7 @@ step("Pindah saldo Bank Jago → Bank Jenius");
   const totalSebelum = one(`SELECT IFNULL(SUM(sisa),0) AS v FROM v_saldo_dompet`).v;
 
   const r = await submit("/dompet/transfer", 'name="dompet_asal_id"', {
-    tanggal: "2026-08-15",
+    tanggal: tgl(15),
     dompet_asal_id: jago,
     dompet_tujuan_id: jenius,
     nominal: "1.000.000",
@@ -518,7 +530,7 @@ step("Penjagaan: hal-hal yang harus ditolak");
   const jago = one(`SELECT id FROM dompet WHERE name='Bank Jago'`).id;
 
   const samaDompet = await submit("/dompet/transfer", 'name="dompet_asal_id"', {
-    tanggal: "2026-08-15",
+    tanggal: tgl(15),
     dompet_asal_id: jago,
     dompet_tujuan_id: jago,
     nominal: "100.000",
@@ -533,7 +545,7 @@ step("Penjagaan: hal-hal yang harus ditolak");
   );
 
   const nominalNgawur = await submit("/belanja/harian", 'name="row_nominal"', {
-    tanggal: "2026-08-16",
+    tanggal: tgl(16),
     dompet_id: jago,
     row_platform: [one(`SELECT id FROM platform LIMIT 1`).id],
     row_divisi: [one(`SELECT id FROM divisi LIMIT 1`).id],
@@ -545,7 +557,7 @@ step("Penjagaan: hal-hal yang harus ditolak");
   checkIncludes("nominal tak terbaca ditolak", nominalNgawur.body, "tidak terbaca");
 
   const tanpaPlatform = await submit("/belanja/harian", 'name="row_nominal"', {
-    tanggal: "2026-08-16",
+    tanggal: tgl(16),
     dompet_id: jago,
     row_platform: [""],
     row_divisi: [""],
@@ -558,7 +570,7 @@ step("Penjagaan: hal-hal yang harus ditolak");
 
   check(
     "tidak ada baris tambahan yang lolos",
-    one(`SELECT COUNT(*) AS n FROM transaksi WHERE tanggal='2026-08-16'`).n,
+    one(`SELECT COUNT(*) AS n FROM transaksi WHERE tanggal=${tgl(16)}`).n,
     0,
   );
 }

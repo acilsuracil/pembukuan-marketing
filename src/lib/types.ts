@@ -35,6 +35,17 @@ export interface Divisi {
   created_at: string;
 }
 
+/** Sebutan kerja untuk sebuah pengeluaran: Perpanjang, Gajian, Pelunasan, … */
+export interface JenisBayar {
+  id: number;
+  name: string;
+  color_slot: number;
+  budget_idr: number;
+  note: string;
+  archived: number;
+  created_at: string;
+}
+
 export interface Brand {
   id: number;
   name: string;
@@ -188,6 +199,7 @@ export interface TxRow {
   brand_id: number | null;
   akun_iklan_id: number | null;
   penerima_id: number | null;
+  jenis_bayar_id: number | null;
   pengajuan_id: number | null;
   keterangan: string;
   no_ref: string;
@@ -200,6 +212,7 @@ export interface TxRow {
   updated_at: string | null;
   divisi_name: string | null;
   divisi_slot: number | null;
+  jenis_bayar_name: string | null;
   platform_name: string | null;
   platform_slot: number | null;
   brand_name: string | null;
