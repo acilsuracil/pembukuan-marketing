@@ -278,6 +278,7 @@ export default async function PengajuanDetailPage({
               today={todayISO()}
               canEdit={canEdit}
               canMarkPaid={bisaBayar(me, g) === null}
+              canCancelPay={me.role === "finance" || me.role === "owner"}
               tahap={tahap}
               canLeader={bisaLeader(me, g)}
               tolakBayar={bisaSetujuiBayar(me, g)}

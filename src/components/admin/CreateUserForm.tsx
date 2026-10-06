@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import { createUser, type ActionState } from "@/app/actions";
 import { Alert, FormButton } from "@/components/ui";
+import { ROLE_LABEL } from "@/lib/format";
 
 const EMPTY: ActionState = { ok: false };
 
@@ -72,10 +73,17 @@ export default function CreateUserForm({ allowOwner }: { allowOwner: boolean }) 
                 Peran
               </label>
               <select id="u-role" name="role" className="field" defaultValue="staff">
-                <option value="staff">Staff — mencatat, ubah/hapus lewat pengajuan</option>
-                <option value="admin">Admin — ikut izin default admin</option>
+                <option value="staff">{ROLE_LABEL.staff} — membuat pengajuan</option>
+                <option value="admin">
+                  {ROLE_LABEL.admin} — menyetujui pengajuan divisinya
+                </option>
+                <option value="finance">
+                  {ROLE_LABEL.finance} — membayar pengajuan yang sudah disetujui
+                </option>
                 {allowOwner && (
-                  <option value="owner">Owner — semua izin, tidak bisa dibatasi</option>
+                  <option value="owner">
+                    {ROLE_LABEL.owner} — menyetujui pembayaran, mengelola aplikasi
+                  </option>
                 )}
               </select>
             </div>

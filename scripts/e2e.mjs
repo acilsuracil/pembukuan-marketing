@@ -150,6 +150,17 @@ async function login(username, password) {
  * uji tidak punya leader) lalu penyetuju pembayaran — akun terpisah, karena
  * pembuat pengajuan tidak boleh menyetujui pembayarannya sendiri.
  */
+/**
+ * Pembayaran adalah tugas peran Finance — owner pun tidak bisa membayar.
+ * Masuk sebagai finance, kirim formulir bayar, lalu kembali sebagai berto.
+ */
+async function bayar(id, data) {
+  await login("fina", "rahasia123");
+  const r = await submit(`/pengajuan/${id}`, 'name="tanggal_bayar"', data);
+  await login("berto", "rahasia123");
+  return r;
+}
+
 async function setujuiSampaiSiap(id) {
   await submit(`/pengajuan/${id}`, 'value="leader"', { id, tahap: "leader", setuju: "1" });
   await login("sari", "rahasia123");
@@ -181,8 +192,14 @@ step("Akun penyetuju pembayaran");
      SELECT 'sari', pass_hash, 'Sari', 'staff', 1, '{"approveBayar":true}', ?
      FROM users WHERE username = 'berto'`,
   ).run(new Date().toISOString());
+  w.prepare(
+    `INSERT INTO users (username, pass_hash, name, role, active, created_at)
+     SELECT 'fina', pass_hash, 'Fina', 'finance', 1, ?
+     FROM users WHERE username = 'berto'`,
+  ).run(new Date().toISOString());
   w.close();
   check("akun penyetuju dibuat", Boolean(one(`SELECT id FROM users WHERE username='sari'`)), true);
+  check("akun finance dibuat", one(`SELECT role FROM users WHERE username='fina'`)?.role, "finance");
   await login("sari", "rahasia123");
   await login("berto", "rahasia123");
 }
@@ -282,6 +299,11 @@ step("Pengajuan rute dompet, lalu tandai dana cair");
   await login("berto", "rahasia123");
   check("satu persetujuan cukup: siap dibayar", one(`SELECT status FROM pengajuan WHERE id = ?`, pg.id).status, "disetujui");
   check(
+    "owner tidak ditawari form bayar — pembayaran tugas Finance",
+    (await get(`/pengajuan/${pg.id}`)).body.includes('name="tanggal_bayar"'),
+    false,
+  );
+  check(
     "riwayat persetujuan tercatat",
     one(`SELECT COUNT(*) AS n FROM pengajuan_persetujuan WHERE pengajuan_id = ? AND setuju = 1`, pg.id).n,
     2,
@@ -289,7 +311,7 @@ step("Pengajuan rute dompet, lalu tandai dana cair");
 
   // Bukti transfer wajib: tanpa lampiran, pencatatan harus ditolak utuh —
   // tidak ada baris buku besar, status pengajuan tidak berubah.
-  const tanpaBukti = await submit(`/pengajuan/${pg.id}`, 'name="tanggal_bayar"', {
+  const tanpaBukti = await bayar(pg.id, {
     id: pg.id,
     status: "dibayar",
     tanggal_bayar: tgl(6),
@@ -304,7 +326,7 @@ step("Pengajuan rute dompet, lalu tandai dana cair");
   );
   check("belum ada baris buku besar", one(`SELECT COUNT(*) AS n FROM transaksi`).n, 0);
 
-  await submit(`/pengajuan/${pg.id}`, 'name="tanggal_bayar"', {
+  await bayar(pg.id, {
     id: pg.id,
     status: "dibayar",
     tanggal_bayar: tgl(6),
@@ -402,7 +424,7 @@ step("Belanja rute langsung dari pengajuan kedua");
   check("tidak ada penerima dobel", one(`SELECT COUNT(*) AS n FROM penerima`).n, 1);
   await setujuiSampaiSiap(pg.id);
 
-  await submit(`/pengajuan/${pg.id}`, 'name="tanggal_bayar"', {
+  await bayar(pg.id, {
     id: pg.id,
     status: "dibayar",
     tanggal_bayar: tgl(14),
@@ -493,7 +515,7 @@ step("Pengajuan yang dibagi ke beberapa brand");
 
   await setujuiSampaiSiap(pg.id);
   // Cair kurang dari yang diminta: porsinya diskalakan, jumlahnya tetap pas.
-  await submit(`/pengajuan/${pg.id}`, 'name="tanggal_bayar"', {
+  await bayar(pg.id, {
     id: pg.id,
     status: "dibayar",
     tanggal_bayar: tgl(19),

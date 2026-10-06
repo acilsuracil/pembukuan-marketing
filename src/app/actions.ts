@@ -7,6 +7,7 @@ import { one, run, setSetting, tx as inTransaction } from "@/lib/db";
 import { fmtIdr, normalLink } from "@/lib/format";
 import { buktiRejection, catatPembayaran, saveBukti } from "@/lib/pembayaran";
 import {
+  bisaBayar,
   kirimBuktiKeGrup,
   kirimTertunda,
   peringatanGrup,
@@ -1035,7 +1036,8 @@ export async function setPengajuanStatus(
 
   /* ---------------------------------------------------- menandai dibayar */
 
-  if (!hasPerm(me, "markPaid")) return NO_ACCESS;
+  const bayarErr = bisaBayar(me, g);
+  if (bayarErr) return { ok: false, error: bayarErr };
   const cairRead = optionalMoney(fd, "nominal_cair", "Nominal cair");
   if (!cairRead.ok) return { ok: false, error: cairRead.error };
   const links = readLinks(fd, "bukti_link");
@@ -1094,7 +1096,8 @@ export async function cancelPembayaran(
 ): Promise<ActionState> {
   const me = await authed();
   if (!me) return DENIED;
-  if (!hasPerm(me, "markPaid")) return NO_ACCESS;
+  // Finance yang membayar; owner boleh ikut membatalkan untuk membetulkan salah catat.
+  if (me.role !== "finance" && me.role !== "owner") return NO_ACCESS;
 
   const id = Number(str(fd, "id"));
   const g = getPengajuan(id);
@@ -1706,7 +1709,7 @@ export async function createUser(
       ok: false,
       error: "Username 3–32 karakter: huruf kecil, angka, titik, garis bawah, strip.",
     };
-  if (role !== "owner" && role !== "admin" && role !== "staff")
+  if (role !== "owner" && role !== "admin" && role !== "staff" && role !== "finance")
     return { ok: false, error: "Peran tidak valid." };
   // Hanya owner yang boleh mencetak owner baru — kalau tidak, admin dengan izin
   // kelola akun bisa mengangkat dirinya sendiri jadi owner.
@@ -1748,7 +1751,7 @@ export async function updateUser(
 
   const role = str(fd, "role");
   const active = str(fd, "active") === "1" ? 1 : 0;
-  if (role !== "owner" && role !== "admin" && role !== "staff")
+  if (role !== "owner" && role !== "admin" && role !== "staff" && role !== "finance")
     return { ok: false, error: "Peran tidak valid." };
 
   // Akun owner hanya boleh disentuh owner, dan hanya owner yang bisa mengangkat
@@ -1914,8 +1917,12 @@ export async function saveRolePerms(
   if (!me) return DENIED;
   if (!isOwner(me)) return OWNER_ONLY;
 
-  setRolePerms({ admin: readPerms(fd, "admin_"), staff: readPerms(fd, "staff_") });
-  logActivity(me, "ubah-izin-peran", "Mengubah izin default admin/staff");
+  setRolePerms({
+    admin: readPerms(fd, "admin_"),
+    staff: readPerms(fd, "staff_"),
+    finance: readPerms(fd, "finance_"),
+  });
+  logActivity(me, "ubah-izin-peran", "Mengubah izin default admin/staff/finance");
   await touchSession(me);
   refresh();
   return {

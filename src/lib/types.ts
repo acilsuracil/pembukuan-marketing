@@ -1,4 +1,4 @@
-export type Role = "owner" | "admin" | "staff";
+export type Role = "owner" | "admin" | "staff" | "finance";
 
 /** Jenis baris buku besar. Efek tiap jenis ke saldo & biaya ada di `v_transaksi`. */
 export type Jenis =

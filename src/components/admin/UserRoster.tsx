@@ -8,7 +8,8 @@ import {
   type ActionState,
 } from "@/app/actions";
 import { Alert, FormButton } from "@/components/ui";
-import type { PermKey } from "@/lib/policy";
+import { ROLE_LABEL } from "@/lib/format";
+import type { PermKey, RolePermRole } from "@/lib/policy";
 import type { Role } from "@/lib/types";
 import PermsEditor from "./PermsEditor";
 import type { PermItem } from "./perms";
@@ -36,10 +37,7 @@ export interface RosterUser {
   permsEditable: boolean;
 }
 
-export interface RoleDefaults {
-  admin: Record<PermKey, boolean>;
-  staff: Record<PermKey, boolean>;
-}
+export type RoleDefaults = Record<RolePermRole, Record<PermKey, boolean>>;
 
 /* ------------------------------------------------------------------ badge */
 
@@ -53,24 +51,26 @@ function RoleChip({ role }: { role: Role }) {
           background: "color-mix(in srgb, var(--series-4) 14%, transparent)",
         }}
       >
-        <span aria-hidden>👑</span> Owner
+        <span aria-hidden>👑</span> {ROLE_LABEL.owner}
       </span>
     );
-  if (role === "admin")
+  if (role === "admin" || role === "finance") {
+    const warna = role === "admin" ? "var(--series-1)" : "var(--series-3)";
     return (
       <span
         className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium"
         style={{
-          color: "var(--series-1)",
-          background: "color-mix(in srgb, var(--series-1) 12%, transparent)",
+          color: warna,
+          background: `color-mix(in srgb, ${warna} 12%, transparent)`,
         }}
       >
-        Admin
+        {ROLE_LABEL[role]}
       </span>
     );
+  }
   return (
     <span className="inline-flex items-center rounded-full border border-[var(--hairline)] px-2 py-0.5 text-[11px] font-medium text-[var(--text-muted)]">
-      Staff
+      {ROLE_LABEL.staff}
     </span>
   );
 }
@@ -267,7 +267,8 @@ function UserEditor({
   const [pw, pwAction] = useActionState(resetUserPassword, EMPTY);
   const [del, delAction] = useActionState(deleteUser, EMPTY);
 
-  const roleLabel: "admin" | "staff" = user.role === "admin" ? "admin" : "staff";
+  // Owner tidak punya default peran; cabang izinnya sudah ditangani terpisah.
+  const roleLabel: RolePermRole = user.role === "owner" ? "admin" : user.role;
 
   return (
     <div className="space-y-4 rounded-lg border border-[var(--hairline)] bg-[var(--surface-1)] p-4">
@@ -303,9 +304,10 @@ function UserEditor({
                   defaultValue={user.role}
                   className="field"
                 >
-                  <option value="staff">Staff</option>
-                  <option value="admin">Admin</option>
-                  {meIsOwner && <option value="owner">Owner</option>}
+                  <option value="staff">{ROLE_LABEL.staff}</option>
+                  <option value="admin">{ROLE_LABEL.admin}</option>
+                  <option value="finance">{ROLE_LABEL.finance}</option>
+                  {meIsOwner && <option value="owner">{ROLE_LABEL.owner}</option>}
                 </select>
               </div>
               <div className="sm:col-span-2">
@@ -412,8 +414,8 @@ function UserEditor({
         </h3>
         {user.role === "owner" ? (
           <p className="mt-2 flex items-center gap-2 text-sm text-[var(--text-secondary)]">
-            <span aria-hidden>👑</span> Owner selalu memegang seluruh izin dan
-            tidak bisa dibatasi.
+            <span aria-hidden>👑</span> {ROLE_LABEL.owner} selalu memegang seluruh
+            izin dan tidak bisa dibatasi.
           </p>
         ) : !user.permsEditable ? (
           <p className="mt-2 text-sm text-[var(--text-muted)]">
@@ -425,7 +427,7 @@ function UserEditor({
               Saat ini{" "}
               {user.hasOverride
                 ? "memakai izin khusus."
-                : `ikut default peran ${roleLabel}.`}
+                : `ikut default peran ${ROLE_LABEL[roleLabel]}.`}
             </p>
             <div className="mt-3">
               <PermsEditor

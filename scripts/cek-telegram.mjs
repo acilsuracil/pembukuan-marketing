@@ -22,7 +22,7 @@ const SECRET = "rahasia-uji";
 
 const GRUP_DIVISI = -500;
 const GRUP_BAYAR = -600;
-const TG = { berto: 1001, sari: 1002, rina: 1003 };
+const TG = { berto: 1001, sari: 1002, rina: 1003, fina: 1004 };
 
 let gagal = 0;
 const check = (label, got, want) => {
@@ -192,6 +192,7 @@ step("Persiapan: leader, ID Telegram, dan grup");
   );
   const rina = one(`SELECT id FROM users WHERE username='rina'`).id;
   exec(`UPDATE users SET telegram_id = ? WHERE username = 'berto'`, TG.berto);
+  exec(`UPDATE users SET telegram_id = ? WHERE username = 'fina'`, TG.fina);
   exec(`UPDATE users SET telegram_id = ? WHERE username = 'sari'`, TG.sari);
   exec(`UPDATE users SET telegram_id = ? WHERE username = 'rina'`, TG.rina);
   exec(`UPDATE divisi SET leader_id = ?, telegram_chat_id = ? WHERE name = 'Endorse'`, rina, GRUP_DIVISI);
@@ -251,24 +252,26 @@ check("status jadi siap dibayar", one(`SELECT status FROM pengajuan WHERE id=?`,
 step("Finance membayar: bukti foto + link dengan membalas pesan bot di grup");
 calls = [];
 await tekan(TG.sari, `P:${g1.id}`);
-check("yang bukan finance ditolak", alertTerakhir()?.text.startsWith("Hanya finance"), true);
+check("yang bukan finance ditolak", alertTerakhir()?.text.startsWith("Hanya Finance"), true);
 await tekan(TG.berto, `P:${g1.id}`);
+check("owner pun tidak bisa membayar", alertTerakhir()?.text.startsWith("Hanya Finance"), true);
+await tekan(TG.fina, `P:${g1.id}`);
 const promptBayar = promptDi(GRUP_BAYAR);
 check("bot meminta bukti di grup pembayaran", Boolean(promptBayar), true);
-check("tidak ada pesan pribadi", panggilan("sendMessage").some((c) => c.body.chat_id === TG.berto), false);
+check("tidak ada pesan pribadi", panggilan("sendMessage").some((c) => c.body.chat_id === TG.fina), false);
 
 // Album dua foto datang sebagai dua pembaruan yang diproses bersamaan.
 await Promise.all([
-  balas(TG.berto, GRUP_BAYAR, promptBayar, { photo: [{ file_id: "kecil", width: 90 }, { file_id: "FOTO1", width: 1280 }] }),
-  balas(TG.berto, GRUP_BAYAR, promptBayar, { photo: [{ file_id: "FOTO2", width: 1280 }] }),
+  balas(TG.fina, GRUP_BAYAR, promptBayar, { photo: [{ file_id: "kecil", width: 90 }, { file_id: "FOTO1", width: 1280 }] }),
+  balas(TG.fina, GRUP_BAYAR, promptBayar, { photo: [{ file_id: "FOTO2", width: 1280 }] }),
 ]);
-await balas(TG.berto, GRUP_BAYAR, promptBayar, { text: "ini linknya https://drive.google.com/bukti-1" });
+await balas(TG.fina, GRUP_BAYAR, promptBayar, { text: "ini linknya https://drive.google.com/bukti-1" });
 await balas(TG.sari, GRUP_BAYAR, promptBayar, { photo: [{ file_id: "FOTO-ORANG-LAIN", width: 1280 }] });
 await webhook({
-  message: { message_id: 5555, chat: { id: GRUP_BAYAR, type: "supergroup" }, from: { id: TG.berto }, photo: [{ file_id: "BUKAN-BALASAN", width: 1280 }] },
+  message: { message_id: 5555, chat: { id: GRUP_BAYAR, type: "supergroup" }, from: { id: TG.fina }, photo: [{ file_id: "BUKAN-BALASAN", width: 1280 }] },
 });
 {
-  const t = JSON.parse(one(`SELECT data FROM telegram_tunggu WHERE telegram_id=?`, TG.berto).data);
+  const t = JSON.parse(one(`SELECT data FROM telegram_tunggu WHERE telegram_id=?`, TG.fina).data);
   check("dua foto album terkumpul (tidak ada yang tertimpa)", t.foto.map((f) => f.id).sort().join(","), "FOTO1,FOTO2");
   check("link terkumpul", t.link.join(","), "https://drive.google.com/bukti-1");
   check(
@@ -282,7 +285,7 @@ await tekan(TG.sari, `PS:${g1.id}`, GRUP_BAYAR, promptBayar);
 check("orang lain tidak bisa menekan Selesai", alertTerakhir()?.text.startsWith("Ini bukan percakapan"), true);
 
 calls = [];
-await tekan(TG.berto, `PS:${g1.id}`, GRUP_BAYAR, promptBayar);
+await tekan(TG.fina, `PS:${g1.id}`, GRUP_BAYAR, promptBayar);
 {
   const g = one(`SELECT * FROM pengajuan WHERE id=?`, g1.id);
   check("status jadi dibayar", g.status, "dibayar");
@@ -296,7 +299,7 @@ await tekan(TG.berto, `PS:${g1.id}`, GRUP_BAYAR, promptBayar);
     calls.some((c) => c.method === "sendMediaGroup" || c.method === "sendPhoto"),
     false,
   );
-  check("sesi bukti ditutup", one(`SELECT COUNT(*) AS n FROM telegram_tunggu WHERE telegram_id=?`, TG.berto).n, 0);
+  check("sesi bukti ditutup", one(`SELECT COUNT(*) AS n FROM telegram_tunggu WHERE telegram_id=?`, TG.fina).n, 0);
 }
 
 step("Leader menolak: alasan dibalas langsung di grup divisi");
@@ -334,7 +337,7 @@ step("Leader yang mengajukan sendiri langsung ke grup pembayaran");
   await tekan(TG.berto, `B1:${g3.id}`);
   check("owner menyetujui pembayaran", one(`SELECT status FROM pengajuan WHERE id=?`, g3.id).status, "disetujui");
   await tekan(TG.berto, `P:${g3.id}`);
-  check("penyetuju tidak bisa sekaligus membayar", alertTerakhir()?.text.startsWith("Penyetuju pembayaran tidak bisa"), true);
+  check("penyetuju (owner) tidak bisa membayar", alertTerakhir()?.text.startsWith("Hanya Finance"), true);
 }
 
 step("Mini App: masuk dengan initData bertanda tangan, lalu mengajukan");

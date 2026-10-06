@@ -1,5 +1,14 @@
 import { connection } from "next/server";
 import ChangePasswordForm from "@/components/ChangePasswordForm";
+import { ROLE_LABEL } from "@/lib/format";
+import type { Role } from "@/lib/types";
+
+const ROLE_DESC: Record<Role, string> = {
+  owner: "menyetujui pembayaran dan mengelola aplikasi, izinnya tidak bisa dibatasi",
+  admin: "menyetujui pengajuan divisinya dan mengelola data master",
+  finance: "membayar pengajuan yang sudah disetujui",
+  staff: "membuat pengajuan dan mencatat pengeluaran harian",
+};
 import { requireUser } from "@/lib/session";
 
 export default async function AkunPage() {
@@ -12,11 +21,7 @@ export default async function AkunPage() {
         <h1 className="text-xl font-semibold tracking-tight">Akun</h1>
         <p className="mt-0.5 text-sm text-[var(--text-muted)]">
           Masuk sebagai <strong>{user.username}</strong> ·{" "}
-          {user.role === "owner"
-            ? "Owner — akses penuh, izinnya tidak bisa dibatasi"
-            : user.role === "admin"
-              ? "Admin — mencatat, menandai dana cair, dan mengelola data master"
-              : "Staff — mencatat pengajuan dan pengeluaran harian"}
+          {ROLE_LABEL[user.role]} — {ROLE_DESC[user.role]}
         </p>
       </div>
 

@@ -86,6 +86,65 @@ function promoteFirstOwner(db: DatabaseSync) {
  * `transaksi` **berdasarkan nama**, sehingga tautannya utuh kembali setelah
  * rename — dan indeks ikut terbuang bersama tabel lama, jadi dibuat ulang.
  */
+/**
+ * Peran 'finance' ditambahkan ke CHECK kolom users.role. SQLite tidak bisa
+ * mengubah CHECK di tempat, jadi tabelnya dibangun ulang — isi dan id akun tidak
+ * berubah, sehingga semua kolom created_by/user_id di tabel lain tetap menunjuk
+ * ke orang yang sama.
+ */
+function upgradeUsersRole(db: DatabaseSync) {
+  const ddl = (
+    db
+      .prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='users'`)
+      .get() as { sql?: string } | undefined
+  )?.sql;
+  if (!ddl || ddl.includes("'finance'")) return;
+
+  db.exec("PRAGMA foreign_keys = OFF");
+  db.exec("BEGIN");
+  try {
+    db.exec(`
+      -- View yang membaca users dibuat ulang tepat setelah migrasi, di migrate().
+      DROP VIEW IF EXISTS v_saldo_dompet;
+      DROP VIEW IF EXISTS v_transaksi;
+
+      CREATE TABLE users_migrated (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        username        TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+        pass_hash       TEXT    NOT NULL,
+        name            TEXT    NOT NULL DEFAULT '',
+        role            TEXT    NOT NULL CHECK (role IN ('owner','admin','staff','finance')) DEFAULT 'staff',
+        active          INTEGER NOT NULL DEFAULT 1,
+        perms           TEXT,
+        session_epoch   INTEGER NOT NULL DEFAULT 1,
+        pass_changed_at TEXT,
+        last_seen_at    TEXT,
+        created_at      TEXT    NOT NULL,
+        telegram_id     INTEGER
+      );
+
+      INSERT INTO users_migrated
+        (id, username, pass_hash, name, role, active, perms, session_epoch,
+         pass_changed_at, last_seen_at, created_at, telegram_id)
+      SELECT
+         id, username, pass_hash, name, role, active, perms, session_epoch,
+         pass_changed_at, last_seen_at, created_at, telegram_id
+      FROM users;
+
+      DROP TABLE users;
+      ALTER TABLE users_migrated RENAME TO users;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_users_tg ON users (telegram_id)
+        WHERE telegram_id IS NOT NULL;
+    `);
+    db.exec("COMMIT");
+  } catch (e) {
+    db.exec("ROLLBACK");
+    throw e;
+  } finally {
+    db.exec("PRAGMA foreign_keys = ON");
+  }
+}
+
 function upgradeTransaksiJenis(db: DatabaseSync) {
   const ddl = (
     db
@@ -285,7 +344,7 @@ function migrate(db: DatabaseSync) {
       username        TEXT    NOT NULL UNIQUE COLLATE NOCASE,
       pass_hash       TEXT    NOT NULL,
       name            TEXT    NOT NULL DEFAULT '',
-      role            TEXT    NOT NULL CHECK (role IN ('owner','admin','staff')) DEFAULT 'staff',
+      role            TEXT    NOT NULL CHECK (role IN ('owner','admin','staff','finance')) DEFAULT 'staff',
       active          INTEGER NOT NULL DEFAULT 1,
       -- Override izin per user (JSON). NULL = ikut default perannya.
       perms           TEXT,
@@ -522,6 +581,8 @@ function migrate(db: DatabaseSync) {
   // "balas pesan ini" milik bot (prompt_id) di chat tersebut.
   addColumn(db, "telegram_tunggu", "chat_id", "INTEGER");
   addColumn(db, "telegram_tunggu", "prompt_id", "INTEGER");
+  // Setelah telegram_id ada (ikut disalin), dan sebelum view dibuat ulang di bawah.
+  upgradeUsersRole(db);
 
   // Urutannya penting: indeks pada pasangan_id dibuat **setelah** tabelnya
   // dibangun ulang, karena pembukuan yang sudah berjalan belum punya kolomnya.

@@ -3,19 +3,20 @@
 import { Fragment, useActionState, useState } from "react";
 import { saveRolePerms, type ActionState } from "@/app/actions";
 import { Alert, FormButton } from "@/components/ui";
-import type { PermKey } from "@/lib/policy";
+import { ROLE_LABEL } from "@/lib/format";
+import type { PermKey, RolePermRole } from "@/lib/policy";
 import { PERM_GROUPS, type PermItem } from "./perms";
 
 const EMPTY: ActionState = { ok: false };
 
-export type RoleMatrix = {
-  admin: Record<PermKey, boolean>;
-  staff: Record<PermKey, boolean>;
-};
+export type RoleMatrix = Record<RolePermRole, Record<PermKey, boolean>>;
+
+/** Urutan kolom peran di matriks. */
+const KOLOM: readonly RolePermRole[] = ["staff", "admin", "finance"];
 
 /**
  * Matriks izin default per peran. Kolom owner hanya penanda "selalu aktif";
- * checkbox admin/staff controlled supaya tombol "isi ulang bawaan" bisa
+ * checkbox staff/admin/finance controlled supaya tombol "isi ulang bawaan" bisa
  * mengembalikan centang tanpa kirim ke server.
  */
 export default function RolePermsForm({
@@ -31,7 +32,7 @@ export default function RolePermsForm({
   const [vals, setVals] = useState<RoleMatrix>(initial);
   const byKey = new Map(permList.map((p) => [p.key, p]));
 
-  const toggle = (role: "admin" | "staff", k: PermKey, on: boolean) =>
+  const toggle = (role: RolePermRole, k: PermKey, on: boolean) =>
     setVals((v) => ({ ...v, [role]: { ...v[role], [k]: on } }));
 
   return (
@@ -39,15 +40,18 @@ export default function RolePermsForm({
       <Alert state={state} />
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[560px] text-left text-sm">
+        <table className="w-full min-w-[660px] text-left text-sm">
           <thead>
             <tr className="border-b border-[var(--hairline)] text-xs text-[var(--text-muted)]">
               <th className="py-2 pr-3 font-medium">Izin</th>
               <th className="w-24 px-3 py-2 text-center font-medium">
-                <span aria-hidden>👑</span> Owner
+                <span aria-hidden>👑</span> {ROLE_LABEL.owner}
               </th>
-              <th className="w-24 px-3 py-2 text-center font-medium">Admin</th>
-              <th className="w-24 px-3 py-2 text-center font-medium">Staff</th>
+              {KOLOM.map((r) => (
+                <th key={r} className="w-24 px-3 py-2 text-center font-medium">
+                  {ROLE_LABEL[r]}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -55,7 +59,7 @@ export default function RolePermsForm({
               <Fragment key={g.title}>
                 <tr>
                   <td
-                    colSpan={4}
+                    colSpan={KOLOM.length + 2}
                     className="pt-4 pb-1.5 text-[11px] font-semibold tracking-wide text-[var(--text-muted)] uppercase"
                   >
                     {g.title}
@@ -77,31 +81,23 @@ export default function RolePermsForm({
                       </td>
                       <td
                         className="px-3 py-2.5 text-center text-xs text-[var(--text-muted)]"
-                        title="Owner selalu punya seluruh izin"
+                        title={`${ROLE_LABEL.owner} selalu punya seluruh izin`}
                       >
                         <span aria-hidden>✓</span>
                         <span className="sr-only">selalu aktif</span>
                       </td>
-                      <td className="px-3 py-2.5 text-center">
-                        <input
-                          type="checkbox"
-                          name={`admin_${k}`}
-                          checked={vals.admin[k]}
-                          onChange={(e) => toggle("admin", k, e.target.checked)}
-                          aria-label={`${item.label} untuk admin`}
-                          className="h-4 w-4 accent-[var(--series-1)]"
-                        />
-                      </td>
-                      <td className="px-3 py-2.5 text-center">
-                        <input
-                          type="checkbox"
-                          name={`staff_${k}`}
-                          checked={vals.staff[k]}
-                          onChange={(e) => toggle("staff", k, e.target.checked)}
-                          aria-label={`${item.label} untuk staff`}
-                          className="h-4 w-4 accent-[var(--series-1)]"
-                        />
-                      </td>
+                      {KOLOM.map((r) => (
+                        <td key={r} className="px-3 py-2.5 text-center">
+                          <input
+                            type="checkbox"
+                            name={`${r}_${k}`}
+                            checked={vals[r][k]}
+                            onChange={(e) => toggle(r, k, e.target.checked)}
+                            aria-label={`${item.label} untuk ${ROLE_LABEL[r]}`}
+                            className="h-4 w-4 accent-[var(--series-1)]"
+                          />
+                        </td>
+                      ))}
                     </tr>
                   );
                 })}
@@ -117,7 +113,11 @@ export default function RolePermsForm({
           type="button"
           className="btn btn-ghost"
           onClick={() =>
-            setVals({ admin: { ...factory.admin }, staff: { ...factory.staff } })
+            setVals({
+              admin: { ...factory.admin },
+              staff: { ...factory.staff },
+              finance: { ...factory.finance },
+            })
           }
         >
           Isi ulang bawaan aplikasi

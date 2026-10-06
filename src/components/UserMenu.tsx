@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { doLogout } from "@/app/auth-actions";
+import { ROLE_LABEL } from "@/lib/format";
 import type { SessionUser } from "@/lib/session";
 
 export default function UserMenu({
@@ -9,12 +10,10 @@ export default function UserMenu({
   user: SessionUser;
   compact?: boolean;
 }) {
-  const ROLE = {
-    owner: { label: "Owner", hint: "Akses penuh, tidak bisa dibatasi" },
-    admin: { label: "Admin", hint: "Izinnya diatur owner" },
-    staff: { label: "Staff", hint: "Izinnya diatur owner" },
-  } as const;
-  const r = ROLE[user.role];
+  const r = {
+    label: ROLE_LABEL[user.role],
+    hint: user.role === "owner" ? "Akses penuh, tidak bisa dibatasi" : `Izinnya diatur ${ROLE_LABEL.owner}`,
+  };
 
   const badge = (
     <span

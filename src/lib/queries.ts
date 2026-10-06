@@ -801,7 +801,7 @@ export function listUsers(): UserWithPresence[] {
             END AS online
      FROM users
      ORDER BY active DESC,
-              CASE role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
+              CASE role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 WHEN 'finance' THEN 2 ELSE 3 END,
               username COLLATE NOCASE`,
   );
 }

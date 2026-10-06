@@ -3,7 +3,8 @@
 import { useActionState, useState } from "react";
 import { setUserPerms, type ActionState } from "@/app/actions";
 import { Alert, FormButton } from "@/components/ui";
-import type { PermKey } from "@/lib/policy";
+import { ROLE_LABEL } from "@/lib/format";
+import type { PermKey, RolePermRole } from "@/lib/policy";
 import { PERM_GROUPS, type PermItem } from "./perms";
 
 const EMPTY: ActionState = { ok: false };
@@ -24,7 +25,7 @@ export default function PermsEditor({
 }: {
   userId: number;
   username: string;
-  roleLabel: "admin" | "staff";
+  roleLabel: RolePermRole;
   initial: Record<PermKey, boolean>;
   hasOverride: boolean;
   permList: PermItem[];
@@ -33,6 +34,7 @@ export default function PermsEditor({
   const [state, action] = useActionState(setUserPerms, EMPTY);
   const [vals, setVals] = useState(initial);
   const byKey = new Map(permList.map((p) => [p.key, p]));
+  const peran = ROLE_LABEL[roleLabel];
 
   return (
     <form action={action} className="space-y-3">
@@ -67,7 +69,7 @@ export default function PermsEditor({
                       <span className="flex items-baseline justify-between gap-2">
                         <span className="text-[13px] font-medium">{item.label}</span>
                         <span className="text-[11px] whitespace-nowrap text-[var(--text-muted)]">
-                          {roleLabel}: {roleDefault[k] ? "ya" : "tidak"}
+                          {peran}: {roleDefault[k] ? "ya" : "tidak"}
                         </span>
                       </span>
                       <span className="mt-0.5 block text-[11px] leading-snug text-[var(--text-muted)]">
@@ -94,7 +96,7 @@ export default function PermsEditor({
             onClick={(e) => {
               if (
                 !window.confirm(
-                  `Hapus izin khusus ${username} dan kembalikan ke default peran ${roleLabel}?`,
+                  `Hapus izin khusus ${username} dan kembalikan ke default peran ${peran}?`,
                 )
               ) {
                 e.preventDefault();
@@ -107,7 +109,7 @@ export default function PermsEditor({
           </button>
         )}
         <p className="text-[11px] text-[var(--text-muted)]">
-          Menyimpan membuat izin akun ini lepas dari default peran {roleLabel}.
+          Menyimpan membuat izin akun ini lepas dari default peran {peran}.
         </p>
       </div>
     </form>

@@ -1,4 +1,12 @@
-import type { Jenis, PengajuanStatus, Sumber } from "./types";
+import type { Jenis, PengajuanStatus, Role, Sumber } from "./types";
+
+/** Nama peran yang tampil di UI. Nilai di database tetap owner/admin/staff/finance. */
+export const ROLE_LABEL: Record<Role, string> = {
+  staff: "Staff",
+  admin: "Leader divisi",
+  owner: "Penyetuju",
+  finance: "Finance",
+};
 
 const nf = (min: number, max: number) =>
   new Intl.NumberFormat("id-ID", {

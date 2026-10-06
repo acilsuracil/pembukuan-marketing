@@ -26,6 +26,7 @@ export default function PengajuanActions({
   today,
   canEdit,
   canMarkPaid,
+  canCancelPay,
   tahap,
   canLeader,
   tolakBayar,
@@ -43,6 +44,8 @@ export default function PengajuanActions({
   today: string;
   canEdit: boolean;
   canMarkPaid: boolean;
+  /** Boleh membatalkan pembayaran: Finance, atau owner untuk membetulkan salah catat. */
+  canCancelPay: boolean;
 }) {
   const router = useRouter();
   const [statusState, doStatus] = useActionState(setPengajuanStatus, EMPTY);
@@ -125,7 +128,7 @@ export default function PengajuanActions({
         >
           <input type="hidden" name="id" value={id} />
           <input type="hidden" name="status" value="dibayar" />
-          <p className="text-sm font-medium">Dana sudah cair</p>
+          <p className="text-sm font-medium">Pembayaran</p>
           <p className="text-xs text-[var(--text-muted)]">
             {tujuan === "dompet"
               ? `Akan dicatat sebagai top-up ke ${dompetName ?? "dompet"} — menambah saldo, belum jadi biaya.`
@@ -236,7 +239,7 @@ export default function PengajuanActions({
         </form>
       )}
 
-      {status === "dibayar" && canMarkPaid && (
+      {status === "dibayar" && canCancelPay && (
         <form action={doCancel}>
           <input type="hidden" name="id" value={id} />
           <FormButton

@@ -31,12 +31,7 @@ export const PERM_LIST = [
   [
     "approveBayar",
     "Persetujuan pembayaran",
-    "Menyetujui pengajuan yang sudah lolos leader, sebelum finance boleh membayar.",
-  ],
-  [
-    "markPaid",
-    "Tandai dana cair",
-    "Menandai pengajuan sudah dibayar — dari sinilah baris buku besar lahir.",
+    "Menyetujui pengajuan yang sudah lolos leader, sebelum Finance melakukan pembayaran.",
   ],
   ["addBelanja", "Catat belanja & mutasi dompet", "Termasuk input harian dari dompet."],
   ["editBelanja", "Ubah transaksi", "Memperbaiki baris buku besar yang sudah tercatat."],
@@ -59,13 +54,21 @@ export const PERM_KEYS = PERM_LIST.map(([k]) => k) as readonly PermKey[];
 
 export type PermMap = Partial<Record<PermKey, boolean>>;
 
-/** Default bawaan. Owner tidak ada di sini — owner selalu boleh segalanya. */
-export const DEFAULT_ROLE_PERMS: Record<"admin" | "staff", Record<PermKey, boolean>> = {
+/** Peran yang izinnya diatur lewat default peran. Owner selalu boleh segalanya. */
+export const ROLE_PERM_ROLES = ["staff", "admin", "finance"] as const;
+
+export type RolePermRole = (typeof ROLE_PERM_ROLES)[number];
+
+/**
+ * Default bawaan. Owner (Penyetuju) tidak ada di sini — owner selalu boleh
+ * segalanya. Pembayaran bukan izin: itu tugas peran Finance (lihat bisaBayar).
+ */
+export const DEFAULT_ROLE_PERMS: Record<RolePermRole, Record<PermKey, boolean>> = {
+  // Leader divisi: menyetujui pengajuan divisinya dan mengelola data harian.
   admin: {
     addPengajuan: true,
     editPengajuan: true,
     approveBayar: false,
-    markPaid: true,
     addBelanja: true,
     editBelanja: true,
     deleteBelanja: true,
@@ -77,12 +80,11 @@ export const DEFAULT_ROLE_PERMS: Record<"admin" | "staff", Record<PermKey, boole
     exportData: true,
   },
   // Staff mencatat, tidak memutuskan: dia boleh mengisi pengajuan dan belanja
-  // harian, tapi tidak menandai dana cair maupun mengubah baris yang sudah ada.
+  // harian, tapi tidak mengubah baris yang sudah ada.
   staff: {
     addPengajuan: true,
     editPengajuan: false,
     approveBayar: false,
-    markPaid: false,
     addBelanja: true,
     editBelanja: false,
     deleteBelanja: false,
@@ -92,6 +94,22 @@ export const DEFAULT_ROLE_PERMS: Record<"admin" | "staff", Record<PermKey, boole
     manageUsers: false,
     viewActivity: false,
     exportData: false,
+  },
+  // Finance membayar pengajuan yang sudah disetujui dan merapikan buku besar,
+  // tapi tidak mengubah pengajuan maupun data master.
+  finance: {
+    addPengajuan: true,
+    editPengajuan: false,
+    approveBayar: false,
+    addBelanja: true,
+    editBelanja: true,
+    deleteBelanja: true,
+    manageDompet: true,
+    manageMaster: false,
+    lockPeriod: true,
+    manageUsers: false,
+    viewActivity: true,
+    exportData: true,
   },
 };
 
@@ -108,29 +126,29 @@ function parsePerms(raw: string | null | undefined): PermMap {
   }
 }
 
-function parseRoleSetting(raw: string | null): { admin: PermMap; staff: PermMap } {
-  if (!raw) return { admin: {}, staff: {} };
+function parseRoleSetting(raw: string | null): Record<RolePermRole, PermMap> {
+  const out: Record<RolePermRole, PermMap> = { admin: {}, staff: {}, finance: {} };
+  if (!raw) return out;
   try {
     const o = JSON.parse(raw);
-    return {
-      admin: parsePerms(JSON.stringify(o?.admin ?? {})),
-      staff: parsePerms(JSON.stringify(o?.staff ?? {})),
-    };
+    for (const r of ROLE_PERM_ROLES) out[r] = parsePerms(JSON.stringify(o?.[r] ?? {}));
+    return out;
   } catch {
-    return { admin: {}, staff: {} };
+    return out;
   }
 }
 
 /** Izin default tiap peran, bisa diubah owner. */
-export function getRolePerms(): Record<"admin" | "staff", Record<PermKey, boolean>> {
+export function getRolePerms(): Record<RolePermRole, Record<PermKey, boolean>> {
   const stored = parseRoleSetting(getSetting("role_perms"));
   return {
     admin: { ...DEFAULT_ROLE_PERMS.admin, ...stored.admin },
     staff: { ...DEFAULT_ROLE_PERMS.staff, ...stored.staff },
+    finance: { ...DEFAULT_ROLE_PERMS.finance, ...stored.finance },
   };
 }
 
-export function setRolePerms(next: Record<"admin" | "staff", PermMap>) {
+export function setRolePerms(next: Record<RolePermRole, PermMap>) {
   setSetting("role_perms", JSON.stringify(next));
 }
 
@@ -152,7 +170,7 @@ export function hasPerm(user: Principal | null, key: PermKey): boolean {
   if (user.role === "owner") return true;
   const own = parsePerms(user.perms);
   if (Object.prototype.hasOwnProperty.call(own, key)) return Boolean(own[key]);
-  const byRole = getRolePerms()[user.role as "admin" | "staff"];
+  const byRole = getRolePerms()[user.role as RolePermRole];
   return Boolean(byRole?.[key]);
 }
 

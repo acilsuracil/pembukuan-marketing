@@ -72,12 +72,12 @@ export function bisaSetujuiBayar(user: Pelaku, g: PengajuanRow): string | null {
 }
 
 /**
- * Finance: punya izin Tandai dana cair, dan bukan orang yang menyetujui
+ * Pembayaran: hanya peran Finance, dan bukan orang yang menyetujui
  * pembayaran pengajuan ini. Menyetujui dan mengeksekusi pembayaran yang sama
- * adalah dua tugas yang sengaja dipisah — owner pun tidak dikecualikan.
+ * adalah dua tugas yang sengaja dipisah.
  */
 export function bisaBayar(user: Pelaku, g: Pick<PengajuanRow, "id">): string | null {
-  if (!hasPerm(user, "markPaid")) return "Hanya finance (izin Tandai dana cair) yang bisa membayar.";
+  if (user.role !== "finance") return "Hanya Finance yang bisa melakukan pembayaran.";
   const penyetuju = one(
     `SELECT 1 FROM pengajuan_persetujuan
      WHERE pengajuan_id = ? AND tahap = 'bayar' AND setuju = 1 AND user_id = ?`,

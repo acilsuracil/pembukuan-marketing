@@ -17,7 +17,7 @@ export const PERM_GROUPS: ReadonlyArray<{
 }> = [
   {
     title: "Pengajuan dana",
-    keys: ["addPengajuan", "editPengajuan", "markPaid"],
+    keys: ["addPengajuan", "editPengajuan", "approveBayar"],
   },
   {
     title: "Buku besar",

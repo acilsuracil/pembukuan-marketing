@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import RolePermsForm from "@/components/admin/RolePermsForm";
 import type { PermItem } from "@/components/admin/perms";
+import { ROLE_LABEL } from "@/lib/format";
 import { DEFAULT_ROLE_PERMS, PERM_LIST, getRolePerms, isOwner } from "@/lib/policy";
 import { listUsers } from "@/lib/queries";
 import { requireUser } from "@/lib/session";
@@ -19,8 +20,8 @@ export default async function AdminPeranPage() {
   const current = getRolePerms();
 
   const users = listUsers();
-  const nAdmin = users.filter((u) => u.role === "admin" && u.perms === null).length;
-  const nStaff = users.filter((u) => u.role === "staff" && u.perms === null).length;
+  const nIkut = (role: "staff" | "admin" | "finance") =>
+    users.filter((u) => u.role === role && u.perms === null).length;
   const nOverride = users.filter(
     (u) => u.role !== "owner" && u.perms !== null,
   ).length;
@@ -30,11 +31,13 @@ export default async function AdminPeranPage() {
       <div className="border-b border-[var(--hairline)] px-4 py-3 sm:px-5">
         <h2 className="text-sm font-semibold">Izin default per peran</h2>
         <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-          Berlaku untuk {nAdmin} akun admin dan {nStaff} akun staff yang ikut
-          default.
+          Berlaku untuk {nIkut("staff")} akun {ROLE_LABEL.staff},{" "}
+          {nIkut("admin")} akun {ROLE_LABEL.admin}, dan {nIkut("finance")} akun{" "}
+          {ROLE_LABEL.finance} yang ikut default.
           {nOverride > 0 &&
             ` ${nOverride} akun memakai izin khusus dan tidak ikut berubah.`}{" "}
-          Owner selalu memegang seluruh izin dan tidak bisa dibatasi.
+          {ROLE_LABEL.owner} selalu memegang seluruh izin dan tidak bisa
+          dibatasi.
         </p>
       </div>
       <div className="p-4 sm:p-5">
