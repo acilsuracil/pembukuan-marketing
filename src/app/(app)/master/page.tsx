@@ -2,7 +2,7 @@ import { connection } from "next/server";
 import MasterForm, { type Field } from "@/components/MasterForm";
 import MasterRowActions from "@/components/MasterRowActions";
 import { Badge } from "@/components/ui";
-import { currentMonth, fmtDate, fmtIdr, monthLabelLong, pct } from "@/lib/format";
+import { currentMonth } from "@/lib/format";
 import { seriesVar } from "@/lib/palette";
 import { grupBayar } from "@/lib/persetujuan";
 import { divisiStats, getDivisi, listUsers, masterUsage } from "@/lib/queries";
@@ -20,6 +20,11 @@ export default async function DivisiPage({
   const editing = editId ? getDivisi(editId) : undefined;
 
   const month = currentMonth();
+  const users = listUsers();
+  const namaLeader = (id: number | null | undefined) => {
+    const u = id ? users.find((x) => x.id === id) : undefined;
+    return u ? u.name || u.username : null;
+  };
   const rows = divisiStats(month).map((r) => ({
     ...r,
     used: masterUsage("divisi", r.id),
@@ -49,7 +54,7 @@ export default async function DivisiPage({
       label: "Leader",
       value: editing?.leader_id,
       empty: "— belum ada (owner yang menangani) —",
-      options: listUsers()
+      options: users
         .filter((u) => u.active)
         .map((u) => ({ value: u.id, label: u.name ? `${u.name} (${u.username})` : u.username })),
       hint: "Menyetujui pengajuan divisi ini sebelum diteruskan ke penyetuju pembayaran.",
@@ -87,17 +92,11 @@ export default async function DivisiPage({
 
       <section className="card overflow-x-auto">
         <table className="w-full text-sm">
-          <caption className="px-4 pt-4 text-left text-xs text-[var(--text-muted)]">
-            Realisasi bulan {monthLabelLong(month)}
-          </caption>
           <thead>
             <tr className="border-b border-[var(--hairline)] text-left text-xs text-[var(--text-muted)]">
               <th className="px-4 py-2 font-medium">Divisi</th>
-              <th className="px-3 py-2 text-right font-medium">Bulan ini</th>
-              <th className="px-3 py-2 text-right font-medium">Budget</th>
-              <th className="px-3 py-2 text-right font-medium">Total biaya</th>
-              <th className="px-3 py-2 text-right font-medium">Baris</th>
-              <th className="px-3 py-2 font-medium">Terakhir</th>
+              <th className="px-3 py-2 font-medium">Leader</th>
+              <th className="px-3 py-2 font-medium">Grup Telegram</th>
               <th className="px-4 py-2" />
             </tr>
           </thead>
@@ -122,23 +121,17 @@ export default async function DivisiPage({
                     </span>
                   )}
                 </td>
-                <td className="tnum px-3 py-2.5 text-right">{fmtIdr(r.biaya_bulan)}</td>
-                <td className="tnum px-3 py-2.5 text-right text-xs text-[var(--text-muted)]">
-                  {r.budget_idr > 0 ? (
-                    <>
-                      {fmtIdr(r.budget_idr)}
-                      <span className="block">{pct(r.biaya_bulan, r.budget_idr, 0)}</span>
-                    </>
-                  ) : (
-                    "–"
+                <td className="px-3 py-2.5 text-xs text-[var(--text-secondary)]">
+                  {namaLeader(getDivisi(r.id)?.leader_id) ?? (
+                    <span className="text-[var(--text-muted)]">– owner yang menangani</span>
                   )}
                 </td>
-                <td className="tnum px-3 py-2.5 text-right">{fmtIdr(r.biaya_total)}</td>
-                <td className="tnum px-3 py-2.5 text-right text-[var(--text-muted)]">
-                  {r.tx_count}
-                </td>
-                <td className="tnum px-3 py-2.5 text-xs text-[var(--text-muted)]">
-                  {r.last_tanggal ? fmtDate(r.last_tanggal) : "–"}
+                <td className="px-3 py-2.5 text-xs">
+                  {getDivisi(r.id)?.telegram_chat_id ? (
+                    <span className="text-[var(--success-text)]">✓ tersambung</span>
+                  ) : (
+                    <span className="text-[var(--text-muted)]">belum</span>
+                  )}
                 </td>
                 <td className="px-4 py-2.5">
                   <MasterRowActions
