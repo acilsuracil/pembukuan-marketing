@@ -654,6 +654,8 @@ export interface PengajuanFilter {
   status?: PengajuanStatus;
   /** "outstanding" = sudah diajukan tapi dananya belum cair. */
   outstanding?: boolean;
+  /** Tahap di dalam status 'diajukan': masih di leader, atau sudah di penyetuju. */
+  tahap?: "leader" | "bayar";
   from?: string;
   to?: string;
   divisiId?: number;
@@ -672,6 +674,8 @@ export function listPengajuan(f: PengajuanFilter = {}): PengajuanRow[] {
     params.push(f.status);
   }
   if (f.outstanding) parts.push("g.status IN ('diajukan','disetujui')");
+  if (f.tahap === "leader") parts.push("g.status = 'diajukan' AND g.leader_at IS NULL");
+  if (f.tahap === "bayar") parts.push("g.status = 'diajukan' AND g.leader_at IS NOT NULL");
   if (f.from) {
     parts.push("g.tanggal >= ?");
     params.push(f.from);

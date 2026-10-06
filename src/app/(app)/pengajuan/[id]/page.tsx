@@ -60,6 +60,11 @@ export default async function PengajuanDetailPage({
   const tahap = tahapOf(g);
   const keputusan = keputusanOf(g.id);
   const buktiLinks = pisahLink(g.bukti_links);
+  // Baris yang memegang bukti: yang sudah punya lampiran, atau pecahan
+  // pertama (id terkecil) — tempat bukti ditempelkan saat dibayar.
+  const buktiTx =
+    rows.find((t) => attachmentsOf(t.id).length > 0)?.id ??
+    (rows.length > 0 ? Math.min(...rows.map((t) => t.id)) : null);
 
   const canEdit = hasPerm(me, "editPengajuan");
 
@@ -197,17 +202,20 @@ export default async function PengajuanDetailPage({
           </section>
 
           {/* Bukti menempel pada baris buku besarnya, bukan pada pengajuannya —
-              yang perlu dibuktikan adalah uang yang benar-benar pindah. */}
-          {rows.map((t) => (
+              yang perlu dibuktikan adalah uang yang benar-benar pindah. Satu
+              pembayaran yang dibagi ke beberapa brand melahirkan beberapa baris,
+              tapi buktinya cuma satu set, menempel di pecahan pertama — jadi
+              kartunya juga cuma satu. */}
+          {buktiTx && (
             <Bukti
-              key={t.id}
-              txId={t.id}
-              items={attachmentsOf(t.id)}
+              txId={buktiTx}
+              items={attachmentsOf(buktiTx)}
+              links={buktiLinks}
               canUpload={hasPerm(me, "addBelanja")}
               canDeleteAny={hasPerm(me, "deleteBelanja")}
               currentUserId={me.id}
             />
-          ))}
+          )}
         </div>
 
         <div className="space-y-4">
@@ -249,23 +257,6 @@ export default async function PengajuanDetailPage({
                 </li>
               )}
             </ol>
-            {buktiLinks.length > 0 && (
-              <div className="mt-3 border-t border-[var(--hairline)] pt-3 text-sm">
-                <p className="text-xs text-[var(--text-muted)]">Bukti bayar (link)</p>
-                {buktiLinks.map((l) => (
-                  // Hanya http/https yang lolos saat disimpan, jadi aman dijadikan href.
-                  <a
-                    key={l}
-                    href={l}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block truncate underline"
-                  >
-                    {l.replace(/^https?:\/\//, "")}
-                  </a>
-                ))}
-              </div>
-            )}
           </section>
 
           <section className="card p-4 sm:p-5">

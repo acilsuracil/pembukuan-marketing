@@ -4,12 +4,12 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { PengajuanStatus } from "@/lib/types";
 
-const STATUSES: Array<{ v: PengajuanStatus | "" | "outstanding"; t: string }> = [
+// Mengikuti tiga langkah alurnya: pengajuan → persetujuan → pembayaran.
+const STATUSES: Array<{ v: PengajuanStatus | "" | "leader" | "bayar"; t: string }> = [
   { v: "", t: "Semua" },
-  { v: "outstanding", t: "Belum cair" },
-  { v: "draft", t: "Draft" },
-  { v: "diajukan", t: "Diajukan" },
-  { v: "disetujui", t: "Disetujui" },
+  { v: "leader", t: "Menunggu leader" },
+  { v: "bayar", t: "Menunggu persetujuan" },
+  { v: "disetujui", t: "Siap dibayar" },
   { v: "dibayar", t: "Dibayar" },
   { v: "ditolak", t: "Ditolak" },
 ];

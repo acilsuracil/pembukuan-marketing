@@ -34,9 +34,12 @@ export default function Bukti({
   canUpload,
   canDeleteAny,
   currentUserId,
+  links = [],
 }: {
   txId: number;
   items: Attachment[];
+  /** Bukti berupa link (mis. Google Drive) — dari pembayaran pengajuan. */
+  links?: string[];
   canUpload: boolean;
   /**
    * Kewenangan dikirim sebagai data, bukan fungsi — Server Component tidak
@@ -78,11 +81,26 @@ export default function Bukti({
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-sm font-semibold">Bukti transfer</h2>
         <span className="text-xs text-[var(--text-muted)]">
-          {items.length} berkas
+          {items.length} berkas{links.length > 0 ? ` · ${links.length} link` : ""}
         </span>
       </div>
 
+      {links.length > 0 && (
+        <ul className="mt-4 space-y-1 text-sm">
+          {links.map((l) => (
+            <li key={l} className="truncate">
+              {/* Hanya http/https yang lolos saat disimpan, jadi aman dijadikan href. */}
+              🔗{" "}
+              <a href={l} target="_blank" rel="noopener noreferrer" className="underline">
+                {l.replace(/^https?:\/\//, "")}
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
+
       {items.length === 0 ? (
+        links.length === 0 &&
         <p className="mt-4 text-xs text-[var(--text-muted)]">
           Belum ada bukti yang dilampirkan.
         </p>

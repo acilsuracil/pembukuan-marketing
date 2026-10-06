@@ -43,6 +43,7 @@ export default async function PengajuanListPage({
       ? (statusRaw as PengajuanStatus)
       : undefined,
     outstanding: statusRaw === "outstanding" || undefined,
+    tahap: statusRaw === "leader" || statusRaw === "bayar" ? statusRaw : undefined,
     q: q || undefined,
     limit: 300,
   };
@@ -70,8 +71,7 @@ export default async function PengajuanListPage({
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Pengajuan dana</h1>
           <p className="mt-0.5 text-sm text-[var(--text-muted)]">
-            Permintaan dana ke finance, beserta apa yang sudah cair dan apa yang
-            masih menggantung.
+            Permintaan dana: pengajuan, persetujuan, lalu pembayaran oleh finance.
           </p>
         </div>
         {canAdd && (
@@ -83,19 +83,19 @@ export default async function PengajuanListPage({
 
       <div className="grid gap-3 sm:grid-cols-3">
         <StatTile
-          label="Belum cair"
+          label="Belum dibayar"
           value={fmtIdr(belumCair.total)}
-          sub={`${belumCair.n} pengajuan diajukan / disetujui`}
+          sub={`${belumCair.n} pengajuan menunggu persetujuan / pembayaran`}
         />
         <StatTile
-          label="Cair bulan ini"
+          label="Siap dibayar"
+          value={fmtIdr(byStatus("disetujui").total)}
+          sub={`${byStatus("disetujui").n} pengajuan sudah disetujui, menunggu finance`}
+        />
+        <StatTile
+          label="Dibayar bulan ini"
           value={fmtIdr(cairBulanIni)}
-          sub="dana yang benar-benar turun"
-        />
-        <StatTile
-          label="Draft"
-          value={String(byStatus("draft").n)}
-          sub={`${fmtIdr(byStatus("draft").total)} belum dikirim ke finance`}
+          sub="dana yang benar-benar dibayarkan"
         />
       </div>
 
