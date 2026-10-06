@@ -13,6 +13,22 @@ const TONE: Record<
   dibayar: "good",
 };
 
-export default function StatusBadge({ status }: { status: PengajuanStatus }) {
-  return <Badge tone={TONE[status]}>{STATUS_LABEL[status]}</Badge>;
+/**
+ * `leaderOk` memecah 'diajukan' jadi dua tahap yang berbeda bagi pembacanya:
+ * masih di leader, atau sudah di penyetuju pembayaran.
+ */
+export default function StatusBadge({
+  status,
+  leaderOk,
+}: {
+  status: PengajuanStatus;
+  leaderOk?: boolean;
+}) {
+  const label =
+    status === "diajukan"
+      ? leaderOk
+        ? "Menunggu persetujuan"
+        : "Menunggu leader"
+      : STATUS_LABEL[status];
+  return <Badge tone={TONE[status]}>{label}</Badge>;
 }

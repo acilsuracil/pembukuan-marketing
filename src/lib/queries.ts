@@ -793,7 +793,7 @@ export interface UserWithPresence extends User {
 export function listUsers(): UserWithPresence[] {
   return all<UserWithPresence>(
     `SELECT id, username, name, role, active, perms, session_epoch,
-            pass_changed_at, last_seen_at, created_at,
+            pass_changed_at, last_seen_at, created_at, telegram_id,
             CASE
               WHEN last_seen_at IS NOT NULL
                AND (julianday('now') - julianday(replace(last_seen_at, 'Z', ''))) * 1440 < 5

@@ -29,6 +29,11 @@ export const PERM_LIST = [
   ["addPengajuan", "Buat pengajuan dana", "Menyusun permintaan dana ke finance."],
   ["editPengajuan", "Ubah & hapus pengajuan", "Termasuk mengubah status jadi diajukan/disetujui/ditolak."],
   [
+    "approveBayar",
+    "Persetujuan pembayaran",
+    "Menyetujui pengajuan yang sudah lolos leader, sebelum finance boleh membayar.",
+  ],
+  [
     "markPaid",
     "Tandai dana cair",
     "Menandai pengajuan sudah dibayar — dari sinilah baris buku besar lahir.",
@@ -59,6 +64,7 @@ export const DEFAULT_ROLE_PERMS: Record<"admin" | "staff", Record<PermKey, boole
   admin: {
     addPengajuan: true,
     editPengajuan: true,
+    approveBayar: false,
     markPaid: true,
     addBelanja: true,
     editBelanja: true,
@@ -75,6 +81,7 @@ export const DEFAULT_ROLE_PERMS: Record<"admin" | "staff", Record<PermKey, boole
   staff: {
     addPengajuan: true,
     editPengajuan: false,
+    approveBayar: false,
     markPaid: false,
     addBelanja: true,
     editBelanja: false,

@@ -183,7 +183,7 @@ export default async function PengajuanListPage({
                     </span>
                   </td>
                   <td className="px-3 py-2.5">
-                    <StatusBadge status={r.status} />
+                    <StatusBadge status={r.status} leaderOk={Boolean(r.leader_at)} />
                   </td>
                   <td className="tnum px-4 py-2.5 text-xs whitespace-nowrap">
                     {belum ? (

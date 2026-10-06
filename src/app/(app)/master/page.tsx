@@ -4,7 +4,9 @@ import MasterRowActions from "@/components/MasterRowActions";
 import { Badge } from "@/components/ui";
 import { currentMonth, fmtDate, fmtIdr, monthLabelLong, pct } from "@/lib/format";
 import { seriesVar } from "@/lib/palette";
-import { divisiStats, getDivisi, masterUsage } from "@/lib/queries";
+import { grupBayar } from "@/lib/persetujuan";
+import { divisiStats, getDivisi, listUsers, masterUsage } from "@/lib/queries";
+import GrupBayarForm from "@/components/GrupBayarForm";
 import { first, type SP } from "@/lib/sp";
 
 export default async function DivisiPage({
@@ -42,6 +44,25 @@ export default async function DivisiPage({
       hint: "Kosong atau 0 = tanpa budget. Realisasi bulan berjalan dibandingkan ke angka ini.",
     },
     {
+      kind: "select",
+      name: "leader_id",
+      label: "Leader",
+      value: editing?.leader_id,
+      empty: "— belum ada (owner yang menangani) —",
+      options: listUsers()
+        .filter((u) => u.active)
+        .map((u) => ({ value: u.id, label: u.name ? `${u.name} (${u.username})` : u.username })),
+      hint: "Menyetujui pengajuan divisi ini sebelum diteruskan ke penyetuju pembayaran.",
+    },
+    {
+      kind: "text",
+      name: "telegram_chat_id",
+      label: "ID grup Telegram",
+      value: editing?.telegram_chat_id ? String(editing.telegram_chat_id) : "",
+      placeholder: "mis. -1001234567890",
+      hint: "Pengajuan divisi ini diposting ke grup ini. Ketik /id di grupnya untuk melihat angkanya, atau /grupdivisi untuk memasang langsung.",
+    },
+    {
       kind: "text",
       name: "note",
       label: "Catatan",
@@ -61,6 +82,7 @@ export default async function DivisiPage({
           submitLabel={editing ? "Simpan perubahan" : "Tambah divisi"}
           listHref="/master"
         />
+        <GrupBayarForm value={grupBayar()} />
       </section>
 
       <section className="card overflow-x-auto">

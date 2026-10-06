@@ -7,16 +7,21 @@ import PengajuanActions from "@/components/PengajuanActions";
 import StatusBadge from "@/components/StatusBadge";
 import { Badge } from "@/components/ui";
 import {
-  brandFinance,
   fmtDate,
   fmtDateTime,
   fmtIdr,
   JENIS_LABEL,
-  linkFinance,
   pisahLink,
   todayISO,
 } from "@/lib/format";
 import { rekLine } from "@/lib/opts";
+import {
+  bisaLeader,
+  bisaSetujuiBayar,
+  keputusanOf,
+  tahapOf,
+  teksFinance,
+} from "@/lib/persetujuan";
 import { hasPerm } from "@/lib/policy";
 import {
   attachmentsOf,
@@ -48,18 +53,11 @@ export default async function PengajuanDetailPage({
         ? rekLine(g.penerima_bank ?? "", g.penerima_no_rek ?? "", g.penerima_nama)
         : "—";
 
-  const format = [
-    `Keterangan : ${g.keterangan}`,
-    `Nominal : ${fmtIdr(g.nominal)}`,
-    `Rekening : ${rek}`,
-    brandFinance(
-      g.brand_name ?? "",
-      porsi.map((p) => ({ nama: p.brand_name, nominal: p.nominal })),
-    ),
-    `Category : ${g.platform_name ?? "—"}`,
-    `Divisi : ${g.divisi_name ?? "—"}`,
-    ...linkFinance(links),
-  ].join("\n");
+  // Teks yang sama persis dengan yang diposting bot ke grup Telegram.
+  const format = teksFinance(g);
+  const tahap = tahapOf(g);
+  const keputusan = keputusanOf(g.id);
+  const buktiLinks = pisahLink(g.bukti_links);
 
   const canEdit = hasPerm(me, "editPengajuan");
 
@@ -69,7 +67,7 @@ export default async function PengajuanDetailPage({
         <div>
           <h1 className="flex items-center gap-2 text-xl font-semibold tracking-tight">
             {g.keterangan}
-            <StatusBadge status={g.status} />
+            <StatusBadge status={g.status} leaderOk={Boolean(g.leader_at)} />
           </h1>
           <p className="mt-0.5 text-sm text-[var(--text-muted)]">
             Diajukan {fmtDate(g.tanggal)} · {fmtIdr(g.nominal)} ·{" "}
@@ -220,6 +218,55 @@ export default async function PengajuanDetailPage({
           </section>
 
           <section className="card p-4 sm:p-5">
+            <h2 className="text-sm font-semibold">Persetujuan</h2>
+            <ol className="mt-3 space-y-2 text-sm">
+              {keputusan.map((k, i) => (
+                <li key={i} className="flex gap-2">
+                  <span aria-hidden>{k.setuju ? "✅" : "❌"}</span>
+                  <span>
+                    <span className="font-medium">{k.nama}</span>{" "}
+                    <span className="text-[var(--text-muted)]">
+                      {k.tahap === "leader" ? "leader" : "penyetuju pembayaran"} ·{" "}
+                      {fmtDateTime(k.ts)}
+                      {k.lewat === "telegram" ? " · Telegram" : ""}
+                    </span>
+                    {k.alasan && !k.setuju && (
+                      <span className="block text-xs">Alasan: {k.alasan}</span>
+                    )}
+                  </span>
+                </li>
+              ))}
+              {(tahap === "leader" || tahap === "bayar" || tahap === "siap") && (
+                <li className="flex gap-2 text-[var(--text-muted)]">
+                  <span aria-hidden>⏳</span>
+                  {tahap === "leader"
+                    ? "Menunggu leader divisi"
+                    : tahap === "bayar"
+                      ? "Menunggu penyetuju pembayaran"
+                      : "Siap dibayar finance"}
+                </li>
+              )}
+            </ol>
+            {buktiLinks.length > 0 && (
+              <div className="mt-3 border-t border-[var(--hairline)] pt-3 text-sm">
+                <p className="text-xs text-[var(--text-muted)]">Bukti bayar (link)</p>
+                {buktiLinks.map((l) => (
+                  // Hanya http/https yang lolos saat disimpan, jadi aman dijadikan href.
+                  <a
+                    key={l}
+                    href={l}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block truncate underline"
+                  >
+                    {l.replace(/^https?:\/\//, "")}
+                  </a>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="card p-4 sm:p-5">
             <h2 className="mb-3 text-sm font-semibold">Tindakan</h2>
             <PengajuanActions
               id={g.id}
@@ -230,6 +277,9 @@ export default async function PengajuanDetailPage({
               today={todayISO()}
               canEdit={canEdit}
               canMarkPaid={hasPerm(me, "markPaid")}
+              tahap={tahap}
+              canLeader={bisaLeader(me, g)}
+              tolakBayar={bisaSetujuiBayar(me, g)}
             />
           </section>
         </div>

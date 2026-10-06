@@ -1,20 +1,22 @@
 "use server";
 
-import crypto from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { hashPassword, passwordProblem } from "@/lib/auth";
 import { createBackup, removeBackup, restoreBackup } from "@/lib/backup";
-import {
-  buktiProblem,
-  buktiTotalProblem,
-  EXT_BY_MIME,
-  MAX_BUKTI_PER_TX,
-} from "@/lib/bukti";
 import { one, run, setSetting, tx as inTransaction } from "@/lib/db";
-import { fmtIdr, todayISO } from "@/lib/format";
+import { fmtIdr, normalLink } from "@/lib/format";
+import { buktiRejection, catatPembayaran, saveBukti } from "@/lib/pembayaran";
+import {
+  kirimBuktiKeGrup,
+  putuskan,
+  setelahDiajukan,
+  sinkronTelegram,
+  tahapOf,
+  tandaiDihapus,
+} from "@/lib/persetujuan";
 import { JENIS_MANUAL } from "@/lib/jenis";
 import { parseRupiahInt } from "@/lib/num";
-import { selisihPorsi, skalakan } from "@/lib/split";
+import { selisihPorsi } from "@/lib/split";
 import { SLOT_COUNT } from "@/lib/palette";
 import {
   hasPerm,
@@ -28,7 +30,6 @@ import {
 } from "@/lib/policy";
 import {
   attachmentsOf,
-  brandPengajuan,
   countActiveOwners,
   getAttachment,
   getDompet,
@@ -40,7 +41,7 @@ import {
   masterUsage,
 } from "@/lib/queries";
 import { getUser, touchSession, type SessionUser } from "@/lib/session";
-import { deleteObject, putObject } from "@/lib/storage";
+import { deleteObject } from "@/lib/storage";
 import type { Jenis, PengajuanStatus, Sumber, Tujuan } from "@/lib/types";
 
 export interface ActionState {
@@ -160,18 +161,24 @@ export async function saveDivisi(
 
   const budget = optionalMoney(fd, "budget_idr", "Budget bulanan");
   if (!budget.ok) return { ok: false, error: budget.error };
+  const leader = optionalId(fd, "leader_id", "Leader");
+  if (!leader.ok) return { ok: false, error: leader.error };
+  const grup = chatIdOf(fd, "telegram_chat_id");
+  if (!grup.ok) return { ok: false, error: grup.error };
 
   try {
     if (idRead.id) {
       run(
-        `UPDATE divisi SET name = ?, color_slot = ?, budget_idr = ?, note = ? WHERE id = ?`,
-        name, readSlot(fd), budget.n, str(fd, "note"), idRead.id,
+        `UPDATE divisi SET name = ?, color_slot = ?, budget_idr = ?, note = ?,
+                leader_id = ?, telegram_chat_id = ? WHERE id = ?`,
+        name, readSlot(fd), budget.n, str(fd, "note"), leader.id, grup.id, idRead.id,
       );
     } else {
       run(
-        `INSERT INTO divisi (name, color_slot, budget_idr, note, created_at)
-         VALUES (?, ?, ?, ?, ?)`,
-        name, readSlot(fd), budget.n, str(fd, "note"), new Date().toISOString(),
+        `INSERT INTO divisi (name, color_slot, budget_idr, note, leader_id, telegram_chat_id, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        name, readSlot(fd), budget.n, str(fd, "note"), leader.id, grup.id,
+        new Date().toISOString(),
       );
     }
   } catch (e) {
@@ -182,6 +189,39 @@ export async function saveDivisi(
   await touchSession(me);
   refresh();
   return { ok: true, message: idRead.id ? "Divisi diperbarui." : "Divisi ditambahkan." };
+}
+
+/**
+ * ID chat Telegram dari formulir. ID grup selalu negatif (mis. -1001234567890),
+ * jadi `optionalId` yang hanya menerima angka positif tidak bisa dipakai.
+ */
+function chatIdOf(
+  fd: FormData,
+  key: string,
+): { ok: false; error: string } | { ok: true; id: number | null } {
+  const raw = str(fd, key);
+  if (raw === "") return { ok: true, id: null };
+  const n = Number(raw);
+  if (!Number.isSafeInteger(n) || n === 0)
+    return { ok: false, error: "ID grup Telegram harus berupa angka, mis. -1001234567890." };
+  return { ok: true, id: n };
+}
+
+/** Grup Telegram tempat pengajuan yang lolos leader menunggu persetujuan pembayaran. */
+export async function saveGrupBayar(
+  _prev: ActionState,
+  fd: FormData,
+): Promise<ActionState> {
+  const me = await authed();
+  if (!me) return DENIED;
+  if (!hasPerm(me, "manageMaster")) return NO_ACCESS;
+  const grup = chatIdOf(fd, "telegram_grup_bayar");
+  if (!grup.ok) return { ok: false, error: grup.error };
+  setSetting("telegram_grup_bayar", grup.id === null ? "" : String(grup.id));
+  logActivity(me, "grup-bayar", grup.id === null ? "dikosongkan" : `Telegram ${grup.id}`);
+  await touchSession(me);
+  refresh();
+  return { ok: true, message: "Grup pembayaran disimpan." };
 }
 
 export async function saveJenisBayar(
@@ -538,74 +578,6 @@ function buktiFiles(fd: FormData): File[] {
     .filter((f) => f.size > 0);
 }
 
-/** Alasan sekumpulan bukti ditolak sebelum apa pun ditulis, atau null. */
-function buktiRejection(files: File[], sudahAda = 0): string | null {
-  if (sudahAda + files.length > MAX_BUKTI_PER_TX)
-    return `Maksimal ${MAX_BUKTI_PER_TX} bukti per transaksi (sekarang sudah ${sudahAda}).`;
-  for (const f of files) {
-    const problem = buktiProblem(f);
-    if (problem) return problem;
-  }
-  return buktiTotalProblem(files);
-}
-
-/**
- * Menyimpan berkas bukti + mencatat barisnya. Mengembalikan pesan galat, atau
- * null kalau semuanya tersimpan.
- *
- * Diunggah serentak: tiap berkas satu round-trip ke penyimpanan dan tidak saling
- * bergantung, jadi mengunggahnya berurutan cuma membuat orang menunggu
- * penjumlahan seluruh latensinya. Batas gabungan yang sudah diperiksa di
- * `buktiRejection` sekaligus jadi pagar memorinya.
- */
-async function saveBukti(
-  txId: number,
-  files: File[],
-  user: SessionUser,
-): Promise<string | null> {
-  if (files.length === 0) return null;
-  const now = new Date().toISOString();
-
-  const uploads = await Promise.all(
-    files.map(async (f) => {
-      const stored = `${crypto.randomUUID()}${EXT_BY_MIME[f.type]}`;
-      try {
-        const buf = Buffer.from(await f.arrayBuffer());
-        return {
-          ok: true as const,
-          f,
-          stored,
-          backend: await putObject(stored, buf, f.type),
-        };
-      } catch (e) {
-        return { ok: false as const, f, message: (e as Error).message };
-      }
-    }),
-  );
-
-  // Baris hanya dicatat untuk berkas yang benar-benar tersimpan, supaya tidak
-  // ada bukti yatim yang tampil di UI tapi tidak bisa dibuka. Ditulis dalam
-  // urutan berkas aslinya, bukan urutan siapa yang selesai lebih dulu.
-  for (const u of uploads) {
-    if (!u.ok) continue;
-    run(
-      `INSERT INTO attachments
-         (id, tx_id, stored_name, orig_name, mime, size, uploaded_by, created_at, storage)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      crypto.randomUUID(), txId, u.stored, u.f.name.slice(0, 160), u.f.type,
-      u.f.size, user.id, now, u.backend,
-    );
-  }
-
-  const failed = uploads.flatMap((u) => (u.ok ? [] : [u]));
-  if (failed.length === 0) return null;
-  return (
-    `${failed.length} dari ${uploads.length} bukti gagal diunggah — ` +
-    failed.map((u) => `"${u.f.name}"`).join(", ") +
-    `. (${failed[0].message})`
-  );
-}
-
 /** Membuang berkas fisiknya. Barisnya sendiri ikut terhapus lewat CASCADE. */
 async function removeBuktiFiles(txId: number) {
   for (const a of attachmentsOf(txId)) {
@@ -842,6 +814,14 @@ export async function savePengajuan(
         ok: false,
         error: "Pengajuan yang sudah dibayar tidak bisa diubah. Batalkan pembayarannya dulu.",
       };
+    // Yang sudah disetujui leader juga dikunci: persetujuannya diberikan untuk
+    // angka dan rekening yang ia lihat, bukan untuk yang diubah sesudahnya.
+    const t = tahapOf(before);
+    if (t !== "draft" && t !== "leader")
+      return {
+        ok: false,
+        error: "Pengajuan yang sudah disetujui leader atau sudah diputuskan tidak bisa diubah lagi.",
+      };
     // Pengajuan dan porsinya ditulis dalam satu transaksi DB: porsi lama yang
     // sudah terhapus sementara pengajuannya gagal diperbarui akan menyisakan
     // pembagian yang jumlahnya tidak sama dengan nominalnya.
@@ -868,7 +848,9 @@ export async function savePengajuan(
       `#${idRead.id} ${fmtIdr(v.nominal)}${v.porsi.length ? ` (${v.porsi.length} brand)` : ""}`,
     );
   } else {
-    const status = str(fd, "status") === "diajukan" ? "diajukan" : "draft";
+    // Tidak ada draft lagi: menyimpan berarti mengajukan ke leader divisinya.
+    const status = "diajukan";
+    let baruId = 0;
     try {
       inTransaction(() => {
         const penerimaId = v.penerima ? simpanPenerima(me, v.penerima) : null;
@@ -881,7 +863,8 @@ export async function savePengajuan(
           v.brandId, v.platformId, v.divisiId, status, v.catatan, v.links.join("\n"), me.id,
           new Date().toISOString(),
         );
-        tulisPorsi(Number(res.lastInsertRowid), v.porsi);
+        baruId = Number(res.lastInsertRowid);
+        tulisPorsi(baruId, v.porsi);
       });
     } catch (e) {
       return { ok: false, error: `Gagal menyimpan: ${(e as Error).message}` };
@@ -891,14 +874,18 @@ export async function savePengajuan(
       "tambah-pengajuan",
       `${fmtIdr(v.nominal)} — ${v.keterangan}${v.porsi.length ? ` (${v.porsi.length} brand)` : ""}`,
     );
+    setelahDiajukan(baruId);
+    await sinkronTelegram(baruId);
   }
+  // Pesan di grup ikut memuat angka yang baru diubah.
+  if (editing) await sinkronTelegram(idRead.id!);
 
   await touchSession(me);
   refresh();
   return {
     ok: true,
     message:
-      (editing ? "Pengajuan diperbarui." : "Pengajuan tersimpan.") +
+      (editing ? "Pengajuan diperbarui." : "Pengajuan diajukan ke leader divisinya.") +
       (v.porsi.length ? ` Dibagi ke ${v.porsi.length} brand.` : ""),
   };
 }
@@ -913,23 +900,16 @@ const MAX_LINK = 20;
  */
 function readLinks(
   fd: FormData,
+  key = "link",
 ): { ok: false; error: string } | { ok: true; links: string[] } {
-  const raw = fd.getAll("link").map((x) => String(x).trim()).filter(Boolean);
+  const raw = fd.getAll(key).map((x) => String(x).trim()).filter(Boolean);
   if (raw.length > MAX_LINK) return { ok: false, error: `Link maksimal ${MAX_LINK}.` };
 
   const links: string[] = [];
   for (const [i, l] of raw.entries()) {
-    const withScheme = /^[a-z][a-z0-9+.-]*:/i.test(l) ? l : `https://${l}`;
-    let u: URL;
-    try {
-      u = new URL(withScheme);
-    } catch {
-      return { ok: false, error: `Link ${i + 1} ("${l}") bukan alamat yang sah.` };
-    }
-    if ((u.protocol !== "https:" && u.protocol !== "http:") || !u.hostname.includes("."))
-      return { ok: false, error: `Link ${i + 1} ("${l}") harus alamat web http/https.` };
-    if (withScheme.length > 500) return { ok: false, error: `Link ${i + 1} terlalu panjang.` };
-    if (!links.includes(withScheme)) links.push(withScheme);
+    const ok = normalLink(l);
+    if (!ok) return { ok: false, error: `Link ${i + 1} ("${l}") harus alamat web http/https.` };
+    if (!links.includes(ok)) links.push(ok);
   }
   return { ok: true, links };
 }
@@ -1002,23 +982,11 @@ function tulisPorsi(
   }
 }
 
-const STATUS_FLOW: PengajuanStatus[] = [
-  "draft",
-  "diajukan",
-  "disetujui",
-  "ditolak",
-  "dibayar",
-];
-
 /**
- * Mengubah status pengajuan — dan, khusus untuk `dibayar`, melahirkan baris
- * buku besarnya.
- *
- * Inilah satu-satunya tempat dana finance masuk pembukuan, dan bentuk barisnya
- * ditentukan rutenya: rute langsung jadi **belanja** (biaya langsung tercatat),
- * rute dompet jadi **top-up** (saldo naik, belum jadi biaya). Kalau rute dompet
- * ikut dicatat sebagai belanja, setiap iklan yang dibayar dari dompet akan
- * terhitung dua kali.
+ * Mengubah status pengajuan dari tombol aplikasi: mengajukan draft lama, atau
+ * menandai dibayar. Disetujui/ditolak **tidak** lewat sini — keduanya hanya
+ * lahir dari keputusan leader dan penyetuju pembayaran (`putuskanPengajuan`),
+ * supaya tidak ada jalan pintas yang melompati persetujuan.
  */
 export async function setPengajuanStatus(
   _prev: ActionState,
@@ -1032,186 +1000,81 @@ export async function setPengajuanStatus(
   if (!g) return { ok: false, error: "Pengajuan tidak ditemukan." };
 
   const status = str(fd, "status") as PengajuanStatus;
-  if (!STATUS_FLOW.includes(status))
-    return { ok: false, error: "Status tidak valid." };
 
-  const needPerm = status === "dibayar" ? "markPaid" : "editPengajuan";
-  if (!hasPerm(me, needPerm)) return NO_ACCESS;
-
-  if (g.status === "dibayar" && status !== "dibayar")
-    return {
-      ok: false,
-      error: "Pengajuan ini sudah dibayar. Pakai tombol Batalkan pembayaran supaya baris buku besarnya ikut dibereskan.",
-    };
-
-  if (status !== "dibayar") {
+  if (status === "diajukan") {
+    if (!hasPerm(me, "addPengajuan")) return NO_ACCESS;
+    if (g.status !== "draft")
+      return { ok: false, error: "Hanya draft yang bisa diajukan." };
     run(
-      `UPDATE pengajuan SET status = ?, catatan = ?, updated_at = ? WHERE id = ?`,
-      status, str(fd, "catatan") || g.catatan, new Date().toISOString(), id,
+      `UPDATE pengajuan SET status = 'diajukan', updated_at = ? WHERE id = ?`,
+      new Date().toISOString(), id,
     );
-    logActivity(me, "status-pengajuan", `#${id} → ${status}`);
+    logActivity(me, "ajukan-pengajuan", `#${id}`);
+    setelahDiajukan(id);
+    await sinkronTelegram(id);
     await touchSession(me);
     refresh();
-    return { ok: true, message: `Status jadi ${status}.` };
+    return { ok: true, message: "Pengajuan diajukan ke leader." };
   }
+
+  if (status !== "dibayar")
+    return {
+      ok: false,
+      error: "Status disetujui/ditolak hanya bisa lewat tombol persetujuan leader atau penyetuju.",
+    };
 
   /* ---------------------------------------------------- menandai dibayar */
 
-  if (g.status === "dibayar") return { ok: false, error: "Pengajuan ini sudah dibayar." };
-  if (g.status === "ditolak")
-    return { ok: false, error: "Pengajuan yang ditolak tidak bisa ditandai dibayar." };
-  if (g.tx_count > 0)
-    return {
-      ok: false,
-      error: `Pengajuan ini sudah punya ${g.tx_count} baris buku besar. Periksa dulu di daftar transaksi.`,
-    };
-
-  const tanggalBayar = str(fd, "tanggal_bayar") || todayISO();
-  if (!ISO_DATE.test(tanggalBayar))
-    return { ok: false, error: "Tanggal cair belum diisi dengan benar." };
-  if (isLocked(tanggalBayar)) return { ok: false, error: lockError(tanggalBayar) };
-
+  if (!hasPerm(me, "markPaid")) return NO_ACCESS;
   const cairRead = optionalMoney(fd, "nominal_cair", "Nominal cair");
   if (!cairRead.ok) return { ok: false, error: cairRead.error };
-  const nominal = cairRead.n > 0 ? cairRead.n : g.nominal;
+  const links = readLinks(fd, "bukti_link");
+  if (!links.ok) return { ok: false, error: links.error };
 
-  if (g.tujuan === "langsung" && !g.divisi_id)
-    return {
-      ok: false,
-      error: "Isi divisinya dulu di pengajuan — tanpa itu pengeluarannya tidak masuk laporan mana pun.",
-    };
+  const h = await catatPembayaran(g, me, {
+    tanggal: str(fd, "tanggal_bayar"),
+    nominalCair: cairRead.n,
+    noRef: str(fd, "no_ref"),
+    catatan: str(fd, "catatan"),
+    files: buktiFiles(fd),
+    links: links.links,
+  });
+  if (!h.ok) return { ok: false, error: h.error };
 
-  /*
-   * Bukti transfer wajib, dan diperiksa **sebelum** apa pun ditulis.
-   *
-   * Dana cair adalah satu-satunya titik di alur ini yang tidak bisa diperiksa
-   * ulang dari data lain: pengajuan hanya menyatakan permintaan, dan begitu
-   * ditandai dibayar seluruh laporan mempercayainya. Bukti transfer inilah
-   * satu-satunya penambat ke kenyataan — jadi urutannya validasi dulu, tulis
-   * kemudian, supaya tidak pernah ada baris buku besar yang lahir tanpa bukti.
-   */
-  const files = buktiFiles(fd);
-  if (files.length === 0)
-    return {
-      ok: false,
-      error:
-        "Lampirkan bukti transfernya dulu. Tangkapan layar mutasi bisa langsung ditempel dengan Ctrl/⌘ + V.",
-    };
-  const rejection = buktiRejection(files);
-  if (rejection) return { ok: false, error: rejection };
-
-  /*
-   * Pembagian ke beberapa brand melahirkan **satu baris per brand**, bukan satu
-   * baris dengan daftar brand. Dengan begitu setiap baris tetap punya tepat satu
-   * brand, sehingga laporan per brand, matriks, filter, dan ekspor CSV tetap
-   * benar tanpa diubah sama sekali — dan jumlah pecahannya sama persis dengan
-   * uang yang cair.
-   *
-   * Kalau yang cair berbeda dari yang diminta, porsinya diskalakan dengan
-   * perbandingan yang sama; jumlahnya tetap dijamin pas oleh `skalakan`.
-   */
-  const porsiTersimpan = brandPengajuan(g.id);
-  const bagian =
-    porsiTersimpan.length > 0
-      ? skalakan(
-          porsiTersimpan.map((p) => p.nominal),
-          nominal,
-        ).map((n, i) => ({ brandId: porsiTersimpan[i].brand_id, nominal: n }))
-      : [{ brandId: g.brand_id, nominal }];
-  const grup = bagian.length > 1 ? crypto.randomUUID() : null;
-
-  const now = new Date().toISOString();
-  let txId: number;
-  try {
-    txId = inTransaction(() => {
-      let head = 0;
-      for (const b of bagian) {
-        const res =
-          g.tujuan === "dompet"
-            ? run(
-                `INSERT INTO transaksi (tanggal, jenis, nominal, dompet_id, brand_id,
-                                        pengajuan_id, keterangan, no_ref, split_group,
-                                        created_by, created_at)
-                 VALUES (?, 'topup', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                tanggalBayar, b.nominal, g.dompet_id, b.brandId, g.id,
-                g.keterangan, str(fd, "no_ref"), grup, me.id, now,
-              )
-            : run(
-                `INSERT INTO transaksi (tanggal, jenis, nominal, sumber, divisi_id, platform_id,
-                                        brand_id, penerima_id, pengajuan_id, keterangan, no_ref,
-                                        split_group, created_by, created_at)
-                 VALUES (?, 'belanja', ?, 'finance', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                tanggalBayar, b.nominal, g.divisi_id, g.platform_id, b.brandId,
-                g.penerima_id, g.id, g.keterangan, str(fd, "no_ref"), grup, me.id, now,
-              );
-        // Bukti menempel pada pecahan pertama: buktinya milik pembayarannya,
-        // bukan milik salah satu porsi.
-        if (head === 0) head = Number(res.lastInsertRowid);
-      }
-      run(
-        `UPDATE pengajuan SET status = 'dibayar', tanggal_bayar = ?, nominal_cair = ?,
-                catatan = ?, updated_at = ? WHERE id = ?`,
-        tanggalBayar,
-        cairRead.n > 0 && cairRead.n !== g.nominal ? cairRead.n : null,
-        str(fd, "catatan") || g.catatan,
-        now,
-        id,
-      );
-      return head;
-    });
-  } catch (e) {
-    return { ok: false, error: `Gagal mencatat pembayaran: ${(e as Error).message}` };
-  }
-
-  /*
-   * Bukti disimpan setelah barisnya ada — ia butuh tx_id. Kalau tidak ada satu
-   * pun berkas yang berhasil tersimpan, pencatatannya dibatalkan seluruhnya:
-   * lebih baik orang mengulang daripada meninggalkan dana cair tanpa bukti,
-   * karena keadaan itulah yang justru dicegah aturan ini.
-   */
-  const masalahBukti = await saveBukti(txId, files, me);
-  if (attachmentsOf(txId).length === 0) {
-    inTransaction(() => {
-      // Seluruh pecahannya, bukan cuma yang memegang bukti: pembagian yang
-      // tersisa separuh akan menjumlah lebih kecil dari uang yang cair.
-      run(`DELETE FROM transaksi WHERE pengajuan_id = ?`, id);
-      run(
-        `UPDATE pengajuan SET status = ?, tanggal_bayar = NULL, nominal_cair = NULL,
-                updated_at = ? WHERE id = ?`,
-        g.status, new Date().toISOString(), id,
-      );
-    });
-    return {
-      ok: false,
-      error: `Pembayaran dibatalkan karena buktinya gagal diunggah. ${masalahBukti ?? ""}`.trim(),
-    };
-  }
-
-  logActivity(
-    me,
-    "bayar-pengajuan",
-    `#${id} ${fmtIdr(nominal)} → ${g.tujuan === "dompet" ? `top-up ${g.dompet_name}` : "pengeluaran"}` +
-      (bagian.length > 1 ? `, dibagi ke ${bagian.length} brand` : ""),
-  );
+  await sinkronTelegram(id);
+  await kirimBuktiKeGrup(id);
   await touchSession(me);
   refresh();
-  const jumlahBukti = attachmentsOf(txId).length;
-  return {
-    ok: true,
-    message:
-      (g.tujuan === "dompet"
-        ? `Dana ${fmtIdr(nominal)} masuk ${g.dompet_name}. Pengeluarannya dicatat menyusul dari input harian.`
-        : `Pengeluaran ${fmtIdr(nominal)} tercatat.`) +
-      (bagian.length > 1
-        ? ` Dibagi jadi ${bagian.length} baris: ${bagian
-            .map((b, i) => `${porsiTersimpan[i].brand_name} ${fmtIdr(b.nominal)}`)
-            .join(", ")}.`
-        : "") +
-      ` ${jumlahBukti} bukti terlampir.` +
-      // Sebagian bukti gagal bukan alasan menggagalkan pencatatannya, tapi harus
-      // dikatakan — yang gagal perlu diunggah ulang dari halaman detail.
-      (masalahBukti ? ` ${masalahBukti}` : ""),
-  };
+  return { ok: true, message: h.message };
+}
+
+/** Keputusan leader atau penyetuju pembayaran dari halaman pengajuan. */
+export async function putuskanPengajuan(
+  _prev: ActionState,
+  fd: FormData,
+): Promise<ActionState> {
+  const me = await authed();
+  if (!me) return DENIED;
+
+  const tahap = str(fd, "tahap");
+  if (tahap !== "leader" && tahap !== "bayar")
+    return { ok: false, error: "Tahap tidak valid." };
+  const id = Number(str(fd, "id"));
+
+  const h = putuskan({
+    pengajuanId: id,
+    user: me,
+    tahap,
+    setuju: str(fd, "setuju") === "1",
+    alasan: str(fd, "alasan"),
+    lewat: "app",
+  });
+  if (!h.ok) return { ok: false, error: h.error };
+
+  await sinkronTelegram(id);
+  await touchSession(me);
+  refresh();
+  return { ok: true, message: h.message };
 }
 
 /** Mengembalikan pengajuan yang salah ditandai dibayar, beserta barisnya. */
@@ -1240,7 +1103,7 @@ export async function cancelPembayaran(
       run(`DELETE FROM transaksi WHERE pengajuan_id = ?`, id);
       run(
         `UPDATE pengajuan SET status = 'disetujui', tanggal_bayar = NULL,
-                nominal_cair = NULL, updated_at = ? WHERE id = ?`,
+                nominal_cair = NULL, bukti_links = '', updated_at = ? WHERE id = ?`,
         new Date().toISOString(),
         id,
       );
@@ -1250,6 +1113,8 @@ export async function cancelPembayaran(
   }
 
   logActivity(me, "batal-bayar-pengajuan", `#${id} — ${g.tx_count} baris dihapus`);
+  // Tombol 💸 Bayar muncul lagi di grup pembayaran.
+  await sinkronTelegram(id);
   await touchSession(me);
   refresh();
   return {
@@ -1275,6 +1140,9 @@ export async function deletePengajuan(
       error: "Pengajuan yang dananya sudah cair tidak bisa dihapus. Batalkan pembayarannya dulu.",
     };
 
+  // Pesan di grup ditandai lebih dulu, selagi catatan pesannya masih ada —
+  // ikut terhapus bersama pengajuannya lewat CASCADE.
+  await tandaiDihapus(id);
   run(`DELETE FROM pengajuan WHERE id = ?`, id);
   logActivity(me, "hapus-pengajuan", `#${id} ${fmtIdr(g.nominal)}`);
   await touchSession(me);
@@ -1885,12 +1753,26 @@ export async function updateUser(
   if (target.id === me.id && active === 0)
     return { ok: false, error: "Tidak bisa menonaktifkan akun sendiri." };
 
+  // ID Telegram: angka positif, atau kosong. Satu akun Telegram hanya boleh
+  // menempel di satu akun aplikasi — kalau tidak, bot tidak tahu siapa yang
+  // menekan tombolnya.
+  const tgRaw = str(fd, "telegram_id");
+  const telegramId = tgRaw === "" ? null : Number(tgRaw);
+  if (telegramId !== null && (!Number.isSafeInteger(telegramId) || telegramId <= 0))
+    return { ok: false, error: "ID Telegram harus berupa angka (bukan @username)." };
+  if (
+    telegramId !== null &&
+    one(`SELECT 1 FROM users WHERE telegram_id = ? AND id <> ?`, telegramId, id)
+  )
+    return { ok: false, error: "ID Telegram itu sudah dipakai akun lain." };
+
   // Menonaktifkan akun harus langsung memutus sesinya yang sedang berjalan.
   const bump = active === 0 && target.active === 1 ? 1 : 0;
   run(
-    `UPDATE users SET name = ?, role = ?, active = ?, session_epoch = session_epoch + ?
+    `UPDATE users SET name = ?, role = ?, active = ?, telegram_id = ?,
+            session_epoch = session_epoch + ?
      WHERE id = ?`,
-    str(fd, "name") || target.username, role, active, bump, id,
+    str(fd, "name") || target.username, role, active, telegramId, bump, id,
   );
 
   logActivity(

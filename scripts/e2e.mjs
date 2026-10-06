@@ -138,6 +138,25 @@ function step(n) {
 
 /* ------------------------------------------------------------------ mulai */
 
+/** Masuk sebagai akun lain; cookie sesi lama diganti. */
+async function login(username, password) {
+  cookie = "";
+  const r = await submit("/login", 'name="username"', { username, password });
+  if (!cookie) throw new Error(`login ${username} gagal (${r.status})`);
+}
+
+/**
+ * Meloloskan pengajuan sampai siap dibayar: leader (owner berto, karena divisi
+ * uji tidak punya leader) lalu penyetuju pembayaran — akun terpisah, karena
+ * pembuat pengajuan tidak boleh menyetujui pembayarannya sendiri.
+ */
+async function setujuiSampaiSiap(id) {
+  await submit(`/pengajuan/${id}`, 'value="leader"', { id, tahap: "leader", setuju: "1" });
+  await login("sari", "rahasia123");
+  await submit(`/pengajuan/${id}`, 'value="bayar"', { id, tahap: "bayar", setuju: "1" });
+  await login("berto", "rahasia123");
+}
+
 step("Buat akun owner lewat /setup");
 {
   const r = await submit("/setup", 'name="username"', {
@@ -149,6 +168,23 @@ step("Buat akun owner lewat /setup");
   check("status setelah setup", r.status, 303);
   check("dapat cookie sesi", cookie.startsWith("ledger_sess=") ? "ya" : "tidak", "ya");
   check("akun tersimpan", one(`SELECT role FROM users WHERE username='berto'`).role, "owner");
+}
+
+step("Akun penyetuju pembayaran");
+{
+  // Akun dan izinnya disiapkan langsung di basis data uji — formulir akun baru
+  // hanya terbuka lewat klik di browser, dan yang diuji di sini alur
+  // persetujuannya. Password-nya sama dengan berto, jadi hash-nya disalin.
+  const w = new DatabaseSync(DB);
+  w.prepare(
+    `INSERT INTO users (username, pass_hash, name, role, active, perms, created_at)
+     SELECT 'sari', pass_hash, 'Sari', 'staff', 1, '{"approveBayar":true}', ?
+     FROM users WHERE username = 'berto'`,
+  ).run(new Date().toISOString());
+  w.close();
+  check("akun penyetuju dibuat", Boolean(one(`SELECT id FROM users WHERE username='sari'`)), true);
+  await login("sari", "rahasia123");
+  await login("berto", "rahasia123");
 }
 
 step("Tambah dua dompet");
@@ -232,6 +268,25 @@ step("Pengajuan rute dompet, lalu tandai dana cair");
   checkIncludes("format untuk finance memuat rekening dompet", detail.body, "1234567890");
   checkIncludes("format memuat nominal", detail.body, rupiah(5000000));
 
+  // Finance belum boleh membayar sebelum leader dan penyetuju menyetujui.
+  check("tombol bayar belum muncul sebelum disetujui", detail.body.includes('name="tanggal_bayar"'), false);
+  check("tahap awal: menunggu leader", pg.leader_at, null);
+
+  // Pembuat pengajuan tidak boleh menyetujui pembayarannya sendiri.
+  await submit(`/pengajuan/${pg.id}`, 'value="leader"', { id: pg.id, tahap: "leader", setuju: "1" });
+  check("leader menyetujui", Boolean(one(`SELECT leader_at FROM pengajuan WHERE id = ?`, pg.id).leader_at), true);
+  const sendiri = await get(`/pengajuan/${pg.id}`);
+  checkIncludes("pembuat tidak ditawari tombol persetujuan bayar", sendiri.body, "Pembuat pengajuan tidak bisa menyetujui");
+  await login("sari", "rahasia123");
+  await submit(`/pengajuan/${pg.id}`, 'value="bayar"', { id: pg.id, tahap: "bayar", setuju: "1" });
+  await login("berto", "rahasia123");
+  check("satu persetujuan cukup: siap dibayar", one(`SELECT status FROM pengajuan WHERE id = ?`, pg.id).status, "disetujui");
+  check(
+    "riwayat persetujuan tercatat",
+    one(`SELECT COUNT(*) AS n FROM pengajuan_persetujuan WHERE pengajuan_id = ? AND setuju = 1`, pg.id).n,
+    2,
+  );
+
   // Bukti transfer wajib: tanpa lampiran, pencatatan harus ditolak utuh —
   // tidak ada baris buku besar, status pengajuan tidak berubah.
   const tanpaBukti = await submit(`/pengajuan/${pg.id}`, 'name="tanggal_bayar"', {
@@ -245,7 +300,7 @@ step("Pengajuan rute dompet, lalu tandai dana cair");
   check(
     "status belum berubah",
     one(`SELECT status FROM pengajuan WHERE id = ?`, pg.id).status,
-    "diajukan",
+    "disetujui",
   );
   check("belum ada baris buku besar", one(`SELECT COUNT(*) AS n FROM transaksi`).n, 0);
 
@@ -345,6 +400,7 @@ step("Belanja rute langsung dari pengajuan kedua");
   const pg = one(`SELECT * FROM pengajuan WHERE tujuan='langsung' ORDER BY id DESC LIMIT 1`);
   check("rekening yang sudah ada dipakai ulang", pg.penerima_id, dewi);
   check("tidak ada penerima dobel", one(`SELECT COUNT(*) AS n FROM penerima`).n, 1);
+  await setujuiSampaiSiap(pg.id);
 
   await submit(`/pengajuan/${pg.id}`, 'name="tanggal_bayar"', {
     id: pg.id,
@@ -435,6 +491,7 @@ step("Pengajuan yang dibagi ke beberapa brand");
   const format = await get(`/pengajuan/${pg.id}`);
   checkIncludes("format ke finance memuat pembagiannya", format.body, "PN138");
 
+  await setujuiSampaiSiap(pg.id);
   // Cair kurang dari yang diminta: porsinya diskalakan, jumlahnya tetap pas.
   await submit(`/pengajuan/${pg.id}`, 'name="tanggal_bayar"', {
     id: pg.id,

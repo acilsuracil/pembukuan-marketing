@@ -20,6 +20,24 @@ export function pisahLink(links: string | null | undefined): string[] {
   return (links ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
 }
 
+/**
+ * Merapikan satu link ketikan orang: tanpa awalan (mis. "instagram.com/dewi")
+ * diberi https://. Selain http/https ditolak (null) — link ini dijadikan href,
+ * dan `javascript:` di sana sama dengan menjalankan skrip.
+ */
+export function normalLink(raw: string): string | null {
+  const l = raw.trim();
+  if (!l || l.length > 500) return null;
+  const withScheme = /^[a-z][a-z0-9+.-]*:/i.test(l) ? l : `https://${l}`;
+  try {
+    const u = new URL(withScheme);
+    if ((u.protocol !== "https:" && u.protocol !== "http:") || !u.hostname.includes(".")) return null;
+  } catch {
+    return null;
+  }
+  return withScheme;
+}
+
 /** Baris "Link" di format untuk finance — kosong kalau tidak ada link. */
 export function linkFinance(links: string[]): string[] {
   return links.length === 0 ? [] : ["Link :", ...links];
@@ -203,7 +221,7 @@ export const SUMBER_LABEL: Record<Sumber, string> = {
 export const STATUS_LABEL: Record<PengajuanStatus, string> = {
   draft: "Draft",
   diajukan: "Diajukan",
-  disetujui: "Disetujui",
+  disetujui: "Siap dibayar",
   ditolak: "Ditolak",
   dibayar: "Dibayar",
 };

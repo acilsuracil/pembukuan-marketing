@@ -196,7 +196,7 @@ export default async function RingkasanPage() {
                       <span className="tnum whitespace-nowrap">{fmtIdr(g.nominal)}</span>
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[var(--text-muted)]">
-                      <StatusBadge status={g.status} />
+                      <StatusBadge status={g.status} leaderOk={Boolean(g.leader_at)} />
                       <span>
                         {g.tujuan === "dompet" ? g.dompet_name : g.penerima_nama}
                       </span>

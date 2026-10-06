@@ -24,6 +24,8 @@ export interface RosterUser {
   active: boolean;
   online: boolean;
   isSelf: boolean;
+  /** ID akun Telegram — untuk tombol setuju/tolak/bayar di bot. */
+  telegramId: number | null;
   /** Tanggal terformat, dihitung di server. */
   passChanged: string | null;
   lastSeen: string | null;
@@ -305,6 +307,24 @@ function UserEditor({
                   <option value="admin">Admin</option>
                   {meIsOwner && <option value="owner">Owner</option>}
                 </select>
+              </div>
+              <div className="sm:col-span-2">
+                <label className="label" htmlFor={`tg-${user.id}`}>
+                  ID Telegram
+                </label>
+                <input
+                  id={`tg-${user.id}`}
+                  name="telegram_id"
+                  type="text"
+                  inputMode="numeric"
+                  defaultValue={user.telegramId ?? ""}
+                  className="field tnum sm:max-w-[260px]"
+                  placeholder="mis. 123456789"
+                />
+                <p className="hint">
+                  Angka, bukan @username. Orangnya bisa mendapatkannya dengan
+                  mengetik /id ke bot. Kosongkan kalau tidak memakai bot.
+                </p>
               </div>
               <div className="sm:col-span-2">
                 <label className="label" htmlFor={`active-${user.id}`}>

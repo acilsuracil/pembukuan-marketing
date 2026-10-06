@@ -33,6 +33,10 @@ export interface Divisi {
   note: string;
   archived: number;
   created_at: string;
+  /** Leader yang menyetujui pengajuan divisi ini. Kosong = owner yang menangani. */
+  leader_id: number | null;
+  /** Grup Telegram divisi ini. Kosong = pengajuannya tidak diposting ke mana pun. */
+  telegram_chat_id: number | null;
 }
 
 /** Sebutan kerja untuk sebuah pengeluaran: Perpanjang, Gajian, Pelunasan, … */
@@ -133,6 +137,8 @@ export interface User {
   pass_changed_at: string | null;
   last_seen_at: string | null;
   created_at: string;
+  /** ID akun Telegram yang dipasangkan; null = tidak memakai bot. */
+  telegram_id?: number | null;
 }
 
 /* -------------------------------------------------------------- pengajuan */
@@ -154,6 +160,12 @@ export interface PengajuanRow {
   catatan: string;
   /** Link profil/konten, dipisah baris baru. Pakai `pisahLink` untuk membacanya. */
   links: string;
+  /** Leader yang meneruskan ke penyetuju pembayaran. Kosong = belum lewat leader. */
+  leader_by: number | null;
+  leader_at: string | null;
+  alasan_tolak: string;
+  /** Bukti bayar berupa link, satu per baris. */
+  bukti_links: string;
   created_by: number | null;
   created_at: string;
   updated_at: string | null;

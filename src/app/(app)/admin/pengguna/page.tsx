@@ -31,6 +31,7 @@ export default async function AdminPenggunaPage() {
       active: u.active === 1,
       online: u.online === 1,
       isSelf: u.id === me.id,
+      telegramId: u.telegram_id ?? null,
       passChanged: u.pass_changed_at ? fmtDate(u.pass_changed_at.slice(0, 10)) : null,
       lastSeen: u.last_seen_at ? fmtDate(u.last_seen_at.slice(0, 10)) : null,
       hasOverride: !owner && u.perms !== null,

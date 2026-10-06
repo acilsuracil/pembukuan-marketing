@@ -5,9 +5,11 @@ import { useActionState, useEffect, useState } from "react";
 import {
   cancelPembayaran,
   deletePengajuan,
+  putuskanPengajuan,
   setPengajuanStatus,
   type ActionState,
 } from "@/app/actions";
+import type { Tahap } from "@/lib/persetujuan";
 import type { PengajuanStatus, Tujuan } from "@/lib/types";
 import BuktiInput from "./BuktiInput";
 import MoneyField from "./MoneyField";
@@ -24,9 +26,17 @@ export default function PengajuanActions({
   today,
   canEdit,
   canMarkPaid,
+  tahap,
+  canLeader,
+  tolakBayar,
 }: {
   id: number;
   status: PengajuanStatus;
+  tahap: Tahap;
+  /** Boleh memutuskan tahap leader (leader divisinya, atau owner). */
+  canLeader: boolean;
+  /** null = boleh memutuskan tahap pembayaran; selain itu alasan kenapa tidak. */
+  tolakBayar: string | null;
   tujuan: Tujuan;
   nominal: number;
   dompetName: string | null;
@@ -36,6 +46,10 @@ export default function PengajuanActions({
 }) {
   const router = useRouter();
   const [statusState, doStatus] = useActionState(setPengajuanStatus, EMPTY);
+  const [putusState, doPutus] = useActionState(putuskanPengajuan, EMPTY);
+  /** Bukti berupa link — boleh lebih dari satu, boleh tanpa gambar. */
+  const [buktiLink, setBuktiLink] = useState<string[]>([""]);
+  const adaLink = buktiLink.some((l) => l.trim() !== "");
   const [cancelState, doCancel] = useActionState(cancelPembayaran, EMPTY);
   const [delState, doDelete] = useActionState(deletePengajuan, EMPTY);
 
@@ -47,7 +61,9 @@ export default function PengajuanActions({
     if (delState.ok) router.push("/pengajuan");
   }, [delState.ok, router]);
 
-  const showPay = canMarkPaid && (status === "diajukan" || status === "disetujui");
+  // Finance hanya membayar yang sudah lolos leader dan penyetuju pembayaran.
+  const showPay = canMarkPaid && tahap === "siap";
+  const putus = tahap === "leader" ? (canLeader ? "leader" : null) : tahap === "bayar" && tolakBayar === null ? "bayar" : null;
 
   return (
     <div className="space-y-4">
@@ -55,34 +71,51 @@ export default function PengajuanActions({
       <Alert state={cancelState} />
       <Alert state={delState} />
 
-      {canEdit && status === "draft" && (
+      <Alert state={putusState} />
+
+      {status === "draft" && (
         <form action={doStatus}>
           <input type="hidden" name="id" value={id} />
           <input type="hidden" name="status" value="diajukan" />
-          <FormButton className="btn btn-primary w-full">
-            Tandai sudah dikirim ke finance
-          </FormButton>
+          <FormButton className="btn btn-primary w-full">Ajukan ke leader</FormButton>
         </form>
       )}
 
-      {canEdit && status === "diajukan" && (
-        <div className="flex gap-2">
-          <form action={doStatus} className="flex-1">
+      {putus && (
+        <div className="space-y-2 rounded-lg border border-[var(--hairline)] p-3">
+          <p className="text-sm font-medium">
+            {putus === "leader" ? "Keputusan leader" : "Persetujuan pembayaran"}
+          </p>
+          <form action={doPutus}>
             <input type="hidden" name="id" value={id} />
-            <input type="hidden" name="status" value="disetujui" />
-            <FormButton className="btn btn-ghost w-full">Disetujui finance</FormButton>
+            <input type="hidden" name="tahap" value={putus} />
+            <input type="hidden" name="setuju" value="1" />
+            <FormButton className="btn btn-primary w-full">
+              {putus === "leader" ? "✅ Setujui & kirim ke pembayaran" : "✅ Setujui pembayaran"}
+            </FormButton>
           </form>
-          <form action={doStatus} className="flex-1">
+          <form action={doPutus} className="space-y-2">
             <input type="hidden" name="id" value={id} />
-            <input type="hidden" name="status" value="ditolak" />
-            <FormButton
-              className="btn btn-danger w-full"
-              confirm="Tandai pengajuan ini ditolak finance?"
-            >
-              Ditolak
+            <input type="hidden" name="tahap" value={putus} />
+            <input type="hidden" name="setuju" value="0" />
+            <input
+              name="alasan"
+              type="text"
+              required
+              minLength={3}
+              className="field"
+              placeholder="Alasan menolak — wajib, dibaca staff"
+              aria-label="Alasan menolak"
+            />
+            <FormButton className="btn btn-danger w-full" confirm="Tolak pengajuan ini?">
+              ❌ Tolak
             </FormButton>
           </form>
         </div>
+      )}
+
+      {tahap === "bayar" && tolakBayar && (
+        <p className="text-xs text-[var(--text-muted)]">{tolakBayar}</p>
       )}
 
       {showPay && (
@@ -134,9 +167,48 @@ export default function PengajuanActions({
           </div>
 
           <div>
+            <span className="label">Bukti berupa link</span>
+            <div className="space-y-2">
+              {buktiLink.map((l, i) => (
+                <div key={i} className="flex gap-2">
+                  <input
+                    name="bukti_link"
+                    type="text"
+                    inputMode="url"
+                    className="field"
+                    placeholder="opsional — mis. link Google Drive"
+                    aria-label={`Link bukti ${i + 1}`}
+                    value={l}
+                    onChange={(e) =>
+                      setBuktiLink((ls) => ls.map((x, j) => (j === i ? e.target.value : x)))
+                    }
+                  />
+                  {buktiLink.length > 1 && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost px-2.5"
+                      aria-label={`Buang link bukti ${i + 1}`}
+                      onClick={() => setBuktiLink((ls) => ls.filter((_, j) => j !== i))}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="btn btn-ghost mt-1.5 px-2.5 py-1 text-xs"
+              onClick={() => setBuktiLink((ls) => [...ls, ""])}
+            >
+              + Tambah link
+            </button>
+          </div>
+
+          <div>
             <label className="label" htmlFor="pay-bukti">
-              Bukti transfer{" "}
-              <span style={{ color: "var(--status-critical)" }}>wajib</span>
+              Bukti transfer (gambar){" "}
+              <span className="text-[var(--text-muted)]">— gambar atau link, minimal satu</span>
             </label>
             <BuktiInput id="pay-bukti" onChange={setBukti} onBusy={setSiapkanBukti} />
             <p className="hint">
@@ -152,14 +224,14 @@ export default function PengajuanActions({
           */}
           <FormButton
             className="btn btn-primary w-full"
-            disabled={bukti === 0 || siapkanBukti}
+            disabled={(bukti === 0 && !adaLink) || siapkanBukti}
             pendingLabel="Mencatat…"
           >
             {siapkanBukti
               ? "Menyiapkan bukti…"
-              : bukti === 0
+              : bukti === 0 && !adaLink
                 ? "Lampirkan bukti dulu"
-                : `Catat pembayaran + ${bukti} bukti`}
+                : "Catat pembayaran"}
           </FormButton>
         </form>
       )}

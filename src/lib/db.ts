@@ -458,6 +458,67 @@ function migrate(db: DatabaseSync) {
   addColumn(db, "pengajuan", "links", "TEXT NOT NULL DEFAULT ''");
   promoteFirstOwner(db);
 
+  /*
+   * Alur persetujuan: staff → leader divisi → penyetuju pembayaran → finance.
+   *
+   * Tahapnya tidak ditambahkan sebagai nilai status baru — itu berarti membangun
+   * ulang tabel pengajuan demi CHECK constraint. Status 'diajukan' dipecah oleh
+   * leader_at: kosong = menunggu leader, terisi = menunggu persetujuan bayar.
+   * 'disetujui' kini berarti persetujuan pembayaran sudah cukup, siap dibayar.
+   */
+  addColumn(db, "divisi", "leader_id", "INTEGER REFERENCES users(id) ON DELETE SET NULL");
+  // Grup Telegram tempat pengajuan divisi ini diposting untuk leader-nya.
+  addColumn(db, "divisi", "telegram_chat_id", "INTEGER");
+  addColumn(db, "pengajuan", "leader_by", "INTEGER REFERENCES users(id) ON DELETE SET NULL");
+  addColumn(db, "pengajuan", "leader_at", "TEXT");
+  addColumn(db, "pengajuan", "alasan_tolak", "TEXT NOT NULL DEFAULT ''");
+  // Bukti bayar berupa link (mis. bukti di Google Drive), satu per baris.
+  addColumn(db, "pengajuan", "bukti_links", "TEXT NOT NULL DEFAULT ''");
+  addColumn(db, "users", "telegram_id", "INTEGER");
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_users_tg ON users (telegram_id)
+      WHERE telegram_id IS NOT NULL;
+
+    -- Satu baris per keputusan. UNIQUE per tahap+orang: satu orang tidak bisa
+    -- dihitung dua kali kalau jumlah persetujuan yang dibutuhkan dinaikkan.
+    CREATE TABLE IF NOT EXISTS pengajuan_persetujuan (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      pengajuan_id INTEGER NOT NULL REFERENCES pengajuan(id) ON DELETE CASCADE,
+      tahap        TEXT    NOT NULL CHECK (tahap IN ('leader','bayar')),
+      user_id      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      setuju       INTEGER NOT NULL CHECK (setuju IN (0, 1)),
+      alasan       TEXT    NOT NULL DEFAULT '',
+      lewat        TEXT    NOT NULL DEFAULT 'app' CHECK (lewat IN ('app','telegram')),
+      ts           TEXT    NOT NULL,
+      UNIQUE (pengajuan_id, tahap, user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_pp_pengajuan ON pengajuan_persetujuan (pengajuan_id);
+
+    -- Pesan Telegram milik sebuah pengajuan, supaya bisa diperbarui saat
+    -- statusnya berubah (tombol hilang, hasil keputusan tertulis).
+    CREATE TABLE IF NOT EXISTS telegram_pesan (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      pengajuan_id INTEGER NOT NULL REFERENCES pengajuan(id) ON DELETE CASCADE,
+      jenis        TEXT    NOT NULL CHECK (jenis IN ('divisi','bayar')),
+      chat_id      INTEGER NOT NULL,
+      message_id   INTEGER NOT NULL,
+      ts           TEXT    NOT NULL,
+      UNIQUE (pengajuan_id, jenis)
+    );
+
+    -- Percakapan bot yang sedang menunggu balasan seseorang: alasan menolak,
+    -- atau kiriman bukti bayar. Satu orang satu percakapan terbuka.
+    CREATE TABLE IF NOT EXISTS telegram_tunggu (
+      telegram_id  INTEGER PRIMARY KEY,
+      jenis        TEXT    NOT NULL CHECK (jenis IN ('alasan','bukti')),
+      pengajuan_id INTEGER NOT NULL REFERENCES pengajuan(id) ON DELETE CASCADE,
+      tahap        TEXT,
+      -- Bukti yang sudah terkumpul (JSON: {foto: [file_id], link: [url]}).
+      data         TEXT    NOT NULL DEFAULT '{}',
+      kedaluwarsa  TEXT    NOT NULL
+    );
+  `);
+
   // Urutannya penting: indeks pada pasangan_id dibuat **setelah** tabelnya
   // dibangun ulang, karena pembukuan yang sudah berjalan belum punya kolomnya.
   upgradeTransaksiJenis(db);

@@ -737,19 +737,10 @@ export default function PengajuanForm({
         </div>
 
         {!editing && (
-          <fieldset>
-            <legend className="label">Simpan sebagai</legend>
-            <div className="flex gap-4 text-sm">
-              <label className="flex items-center gap-1.5">
-                <input type="radio" name="status" value="draft" defaultChecked />
-                Draft
-              </label>
-              <label className="flex items-center gap-1.5">
-                <input type="radio" name="status" value="diajukan" />
-                Sudah dikirim ke finance
-              </label>
-            </div>
-          </fieldset>
+          <p className="hint">
+            Begitu diajukan, pengajuan langsung dikirim ke grup Telegram divisinya
+            untuk disetujui leader.
+          </p>
         )}
 
         <div className="flex gap-2 pt-1">
@@ -766,7 +757,7 @@ export default function PengajuanForm({
                 ? `Porsi ${selisih > 0 ? "lebih" : "kurang"} ${fmtIdr(Math.abs(selisih))}`
                 : editing
                   ? "Simpan perubahan"
-                  : "Simpan pengajuan"}
+                  : "Ajukan"}
           </FormButton>
           <Link
             href={editing ? `/pengajuan/${initial!.id}` : "/pengajuan"}
