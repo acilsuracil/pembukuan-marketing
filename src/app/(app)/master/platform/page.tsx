@@ -2,7 +2,7 @@ import { connection } from "next/server";
 import MasterForm, { type Field } from "@/components/MasterForm";
 import MasterRowActions from "@/components/MasterRowActions";
 import { Badge } from "@/components/ui";
-import { currentMonth, fmtDate, fmtIdr, monthLabelLong } from "@/lib/format";
+import { currentMonth } from "@/lib/format";
 import { seriesVar } from "@/lib/palette";
 import {
   getPlatform,
@@ -84,17 +84,11 @@ export default async function PlatformPage({
 
       <section className="card overflow-x-auto">
         <table className="w-full text-sm">
-          <caption className="px-4 pt-4 text-left text-xs text-[var(--text-muted)]">
-            Realisasi bulan {monthLabelLong(month)}
-          </caption>
           <thead>
             <tr className="border-b border-[var(--hairline)] text-left text-xs text-[var(--text-muted)]">
               <th className="px-4 py-2 font-medium">Category</th>
               <th className="px-3 py-2 font-medium">Divisi default</th>
               <th className="px-3 py-2 font-medium">Dompet</th>
-              <th className="px-3 py-2 text-right font-medium">Bulan ini</th>
-              <th className="px-3 py-2 text-right font-medium">Total biaya</th>
-              <th className="px-3 py-2 font-medium">Terakhir</th>
               <th className="px-4 py-2" />
             </tr>
           </thead>
@@ -124,11 +118,6 @@ export default async function PlatformPage({
                 </td>
                 <td className="px-3 py-2.5 text-xs text-[var(--text-secondary)]">
                   {r.dompet_name ?? "–"}
-                </td>
-                <td className="tnum px-3 py-2.5 text-right">{fmtIdr(r.biaya_bulan)}</td>
-                <td className="tnum px-3 py-2.5 text-right">{fmtIdr(r.biaya_total)}</td>
-                <td className="tnum px-3 py-2.5 text-xs text-[var(--text-muted)]">
-                  {r.last_tanggal ? fmtDate(r.last_tanggal) : "–"}
                 </td>
                 <td className="px-4 py-2.5">
                   <MasterRowActions
