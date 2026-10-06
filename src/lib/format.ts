@@ -15,6 +15,35 @@ export function fmtIdr(v: number | null | undefined): string {
   return n < 0 ? `−Rp ${idrFmt.format(-n)}` : `Rp ${idrFmt.format(n)}`;
 }
 
+/** Kolom `links` pengajuan (satu per baris) jadi daftar. */
+export function pisahLink(links: string | null | undefined): string[] {
+  return (links ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
+}
+
+/** Baris "Link" di format untuk finance — kosong kalau tidak ada link. */
+export function linkFinance(links: string[]): string[] {
+  return links.length === 0 ? [] : ["Link :", ...links];
+}
+
+/**
+ * Baris "Brand" di format untuk finance. Satu brand tetap satu baris; kalau
+ * dibagi, tiap brand turun ke barisnya sendiri dengan porsinya:
+ *
+ *   Brand :
+ *   P138 ( Rp 1.000.000 )
+ *   S138 ( Rp 1.000.000 )
+ */
+export function brandFinance(
+  tunggal: string,
+  porsi: Array<{ nama: string; nominal: number | null }>,
+): string {
+  if (porsi.length === 0) return `Brand : ${tunggal.toUpperCase() || "—"}`;
+  return [
+    "Brand :",
+    ...porsi.map((p) => `${p.nama.toUpperCase()} ( ${p.nominal === null ? "—" : fmtIdr(p.nominal)} )`),
+  ].join("\n");
+}
+
 /** Angka saja, tanpa "Rp" — untuk kolom tabel yang sudah berjudul rupiah. */
 export function fmtNum(v: number | null | undefined): string {
   if (v === null || v === undefined || Number.isNaN(v)) return "–";

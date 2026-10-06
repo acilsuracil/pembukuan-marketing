@@ -29,11 +29,14 @@ export default function TxTable({
   canEdit,
   canDelete,
   emptyText = "Belum ada transaksi yang cocok dengan filter ini.",
+  total,
 }: {
   rows: TxRow[];
   canEdit: boolean;
   canDelete: boolean;
   emptyText?: string;
+  /** Baris jumlah di kaki tabel, dijumlahkan di kolom "Ke biaya". */
+  total?: Array<{ label: string; biaya: number }>;
 }) {
   return (
     <section className="card overflow-x-auto">
@@ -127,9 +130,9 @@ export default function TxTable({
                       <Link
                         href={`/pengajuan/${t.pengajuan_id}`}
                         className="btn btn-ghost px-2 py-1 text-xs"
-                        title="Baris ini lahir dari pengajuan"
+                        title="Lihat rincian pembayaran: rekening, porsi brand, link, dan bukti transfer"
                       >
-                        Pengajuan
+                        Rincian
                       </Link>
                     )}
                     {canEdit && (
@@ -156,6 +159,28 @@ export default function TxTable({
             </tr>
           ))}
         </tbody>
+        {total && total.length > 0 && rows.length > 0 && (
+          <tfoot>
+            {total.map((t, i) => (
+              <tr
+                key={t.label}
+                className={
+                  i === 0
+                    ? "border-t-2 border-[var(--hairline)]"
+                    : "border-t border-[var(--hairline)]"
+                }
+              >
+                <td colSpan={6} className="px-4 py-2.5 text-right text-xs text-[var(--text-muted)]">
+                  {t.label}
+                </td>
+                <td className="tnum px-3 py-2.5 text-right font-semibold whitespace-nowrap">
+                  {fmtIdr(t.biaya)}
+                </td>
+                {(canEdit || canDelete) && <td />}
+              </tr>
+            ))}
+          </tfoot>
+        )}
       </table>
     </section>
   );

@@ -29,6 +29,7 @@ export default function TxFilters({
   brand,
   dompet,
   exportHref,
+  keep,
 }: {
   value: TxFilterValues;
   divisi: TxOpt[];
@@ -36,14 +37,17 @@ export default function TxFilters({
   brand: TxOpt[];
   dompet: TxOpt[];
   exportHref?: string;
+  /** Parameter di luar filter yang harus bertahan, mis. jumlah baris per halaman. */
+  keep?: Record<string, string>;
 }) {
   const router = useRouter();
   const [v, setV] = useState(value);
 
   function apply(next: TxFilterValues) {
     setV(next);
+    // Nomor halaman sengaja tidak dibawa: filter baru mulai dari halaman 1.
     const u = new URLSearchParams();
-    for (const [k, val] of Object.entries(next)) if (val) u.set(k, val);
+    for (const [k, val] of Object.entries({ ...next, ...keep })) if (val) u.set(k, val);
     const s = u.toString();
     router.push(s ? `/belanja?${s}` : "/belanja");
   }

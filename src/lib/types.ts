@@ -152,6 +152,8 @@ export interface PengajuanRow {
   tanggal_bayar: string | null;
   nominal_cair: number | null;
   catatan: string;
+  /** Link profil/konten, dipisah baris baru. Pakai `pisahLink` untuk membacanya. */
+  links: string;
   created_by: number | null;
   created_at: string;
   updated_at: string | null;

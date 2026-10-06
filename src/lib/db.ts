@@ -454,6 +454,8 @@ function migrate(db: DatabaseSync) {
   `);
 
   addColumn(db, "users", "perms", "TEXT");
+  // Link profil/konten yang dikontrak (endorse), satu per baris. Kosong = tanpa link.
+  addColumn(db, "pengajuan", "links", "TEXT NOT NULL DEFAULT ''");
   promoteFirstOwner(db);
 
   // Urutannya penting: indeks pada pasangan_id dibuat **setelah** tabelnya

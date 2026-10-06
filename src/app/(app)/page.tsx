@@ -147,7 +147,11 @@ export default async function RingkasanPage() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
-        <section className="space-y-2">
+        {/* min-w-0 wajib: tanpa itu kolom 1fr tidak mau lebih sempit dari lebar
+            minimum tabel (banyak sel nowrap), sehingga kartu di kanan terdorong
+            keluar halaman. Dengan ini tabel yang kelebaran menggulir di dalam
+            kartunya sendiri (overflow-x-auto di TxTable). */}
+        <section className="min-w-0 space-y-2">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold">Transaksi terbaru</h2>
             <Link href="/belanja" className="text-xs underline">

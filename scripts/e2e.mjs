@@ -333,7 +333,9 @@ step("Belanja rute langsung dari pengajuan kedua");
     keterangan: "Endorse Dewi 1 slot IG",
     nominal: "3.500.000",
     tujuan: "langsung",
-    penerima_id: dewi,
+    penerima_no_rek: "0987654321",
+    penerima_nama: "Dewi Endorser",
+    penerima_bank: "BCA",
     platform_id: ig,
     divisi_id: endorse,
     brand_id: "",
@@ -341,6 +343,8 @@ step("Belanja rute langsung dari pengajuan kedua");
     status: "diajukan",
   });
   const pg = one(`SELECT * FROM pengajuan WHERE tujuan='langsung' ORDER BY id DESC LIMIT 1`);
+  check("rekening yang sudah ada dipakai ulang", pg.penerima_id, dewi);
+  check("tidak ada penerima dobel", one(`SELECT COUNT(*) AS n FROM penerima`).n, 1);
 
   await submit(`/pengajuan/${pg.id}`, 'name="tanggal_bayar"', {
     id: pg.id,
@@ -365,7 +369,6 @@ step("Belanja rute langsung dari pengajuan kedua");
 
 step("Pengajuan yang dibagi ke beberapa brand");
 {
-  const dewi = one(`SELECT id FROM penerima`).id;
   const ads = one(`SELECT id FROM divisi WHERE name='Ads'`).id;
   const meta = one(`SELECT id FROM platform WHERE name='Meta Ads'`).id;
 
@@ -389,7 +392,9 @@ step("Pengajuan yang dibagi ke beberapa brand");
     keterangan: "Iklan bersama dua brand",
     nominal: "4.000.000",
     tujuan: "langsung",
-    penerima_id: dewi,
+    penerima_no_rek: "0987654321",
+    penerima_nama: "Dewi Endorser",
+    penerima_bank: "BCA",
     platform_id: meta,
     divisi_id: ads,
     brand_mode: "multi",
@@ -410,7 +415,9 @@ step("Pengajuan yang dibagi ke beberapa brand");
     keterangan: "Iklan bersama dua brand",
     nominal: "4.000.000",
     tujuan: "langsung",
-    penerima_id: dewi,
+    penerima_no_rek: "0987654321",
+    penerima_nama: "Dewi Endorser",
+    penerima_bank: "BCA",
     platform_id: meta,
     divisi_id: ads,
     brand_mode: "multi",
@@ -572,6 +579,101 @@ step("Penjagaan: hal-hal yang harus ditolak");
     "tidak ada baris tambahan yang lolos",
     one(`SELECT COUNT(*) AS n FROM transaksi WHERE tanggal=${tgl(16)}`).n,
     0,
+  );
+}
+
+step("Rekening penerima yang diketik manual masuk daftar sendiri");
+{
+  const endorse = one(`SELECT id FROM divisi WHERE name='Endorse'`).id;
+  const kirim = (rek) =>
+    submit("/pengajuan/baru", 'name="keterangan"', {
+      tanggal: "2026-08-20",
+      keterangan: "Endorse Budi 1 video",
+      nominal: "750.000",
+      tujuan: "langsung",
+      ...rek,
+      platform_id: "",
+      divisi_id: endorse,
+      brand_id: "",
+      catatan: "",
+      status: "draft",
+    });
+
+  const kurang = await kirim({ penerima_no_rek: "081234567890", penerima_nama: "Budi", penerima_bank: "" });
+  checkIncludes("rekening tanpa bank ditolak", kurang.body, "nomor rekening, nama pemilik, dan bank");
+
+  await kirim({ penerima_no_rek: "0812-3456-7890", penerima_nama: "Budi Santoso", penerima_bank: "DANA" });
+  const budi = one(`SELECT * FROM penerima WHERE nama='Budi Santoso'`);
+  check("rekening baru tersimpan ke daftar", budi?.bank, "DANA");
+  check(
+    "pengajuan menunjuk rekening barunya",
+    one(`SELECT penerima_id FROM pengajuan ORDER BY id DESC LIMIT 1`).penerima_id,
+    budi.id,
+  );
+
+  // Rekening yang sama ditulis beda gaya: tetap satu baris di daftar.
+  await kirim({ penerima_no_rek: "081234567890", penerima_nama: "budi santoso", penerima_bank: "dana" });
+  check("penulisan beda tidak membuat baris dobel", one(`SELECT COUNT(*) AS n FROM penerima`).n, 2);
+  check(
+    "pengajuan kedua memakai rekening yang sama",
+    one(`SELECT penerima_id FROM pengajuan ORDER BY id DESC LIMIT 1`).penerima_id,
+    budi.id,
+  );
+}
+
+step("Link profil di pengajuan");
+{
+  const endorse = one(`SELECT id FROM divisi WHERE name='Endorse'`).id;
+  const kirim = (link) =>
+    submit("/pengajuan/baru", 'name="keterangan"', {
+      tanggal: "2026-08-21",
+      keterangan: "Endorse dua akun",
+      nominal: "1.000.000",
+      tujuan: "langsung",
+      penerima_no_rek: "0987654321",
+      penerima_nama: "Dewi Endorser",
+      penerima_bank: "BCA",
+      platform_id: "",
+      divisi_id: endorse,
+      brand_id: "",
+      catatan: "",
+      status: "draft",
+      link,
+    });
+
+  const jumlah = one(`SELECT COUNT(*) AS n FROM pengajuan`).n;
+  const jahat = await kirim(["javascript:alert(1)"]);
+  checkIncludes("link javascript: ditolak", jahat.body, "harus alamat web http/https");
+  check("pengajuan dengan link jahat tidak tersimpan", one(`SELECT COUNT(*) AS n FROM pengajuan`).n, jumlah);
+
+  await kirim(["instagram.com/dewi", "", "https://tiktok.com/@dewi", "instagram.com/dewi"]);
+  const pg = one(`SELECT * FROM pengajuan ORDER BY id DESC LIMIT 1`);
+  check(
+    "link dirapikan: diberi https, kosong & kembar dibuang",
+    pg.links,
+    "https://instagram.com/dewi\nhttps://tiktok.com/@dewi",
+  );
+  const detail = await get(`/pengajuan/${pg.id}`);
+  checkIncludes("detail menautkan link", detail.body, 'href="https://tiktok.com/@dewi"');
+  checkIncludes("format finance memuat link", detail.body, "Link :");
+}
+
+step("Tabel pengeluaran: total di kaki tabel dan pembagian halaman");
+{
+  const n = one(`SELECT COUNT(*) AS n FROM v_transaksi`).n;
+  const biaya = one(`SELECT IFNULL(SUM(delta_biaya),0) AS v FROM v_transaksi`).v;
+
+  const hal1 = await get("/belanja?per=10");
+  checkIncludes("total mencakup semua baris filter", hal1.body, `Total pengeluaran (${n} baris sesuai filter)`);
+  checkIncludes("angka total = jumlah ke biaya", hal1.body, rupiah(biaya));
+  checkIncludes("rentang baris halaman 1", hal1.body, `1<!-- -->–<!-- -->${Math.min(10, n)}<!-- --> dari <!-- -->${n}`);
+
+  const jauh = await get("/belanja?per=10&hal=99");
+  check("halaman di luar jangkauan tetap 200", jauh.status, 200);
+  checkIncludes(
+    "halaman di luar jangkauan jatuh ke halaman terakhir",
+    jauh.body,
+    `${Math.ceil(n / 10)}<!-- --> / <!-- -->${Math.ceil(n / 10)}`,
   );
 }
 

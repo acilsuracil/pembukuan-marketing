@@ -37,6 +37,8 @@ export function formOptions(): FormOptions {
       id: p.id,
       label: p.nama,
       rek: rekLine(p.bank, p.no_rek, p.nama),
+      bank: p.bank,
+      noRek: p.no_rek,
     })),
     dompet: listDompet().map((d) => ({
       id: d.id,

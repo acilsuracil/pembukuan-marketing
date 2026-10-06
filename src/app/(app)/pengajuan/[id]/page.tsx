@@ -7,10 +7,13 @@ import PengajuanActions from "@/components/PengajuanActions";
 import StatusBadge from "@/components/StatusBadge";
 import { Badge } from "@/components/ui";
 import {
+  brandFinance,
   fmtDate,
   fmtDateTime,
   fmtIdr,
   JENIS_LABEL,
+  linkFinance,
+  pisahLink,
   todayISO,
 } from "@/lib/format";
 import { rekLine } from "@/lib/opts";
@@ -36,6 +39,7 @@ export default async function PengajuanDetailPage({
 
   const rows = listTransaksi({ pengajuanId: g.id });
   const porsi = brandPengajuan(g.id);
+  const links = pisahLink(g.links);
 
   const rek =
     g.tujuan === "dompet"
@@ -48,9 +52,13 @@ export default async function PengajuanDetailPage({
     `Keterangan : ${g.keterangan}`,
     `Nominal : ${fmtIdr(g.nominal)}`,
     `Rekening : ${rek}`,
-    `Brand : ${g.brand_name ?? "—"}`,
+    brandFinance(
+      g.brand_name ?? "",
+      porsi.map((p) => ({ nama: p.brand_name, nominal: p.nominal })),
+    ),
     `Platform : ${g.platform_name ?? "—"}`,
     `Divisi : ${g.divisi_name ?? "—"}`,
+    ...linkFinance(links),
   ].join("\n");
 
   const canEdit = hasPerm(me, "editPengajuan");
@@ -105,11 +113,32 @@ export default async function PengajuanDetailPage({
                     ? porsi.map((p) => `${p.brand_name} ${fmtIdr(p.nominal)}`).join(" · ")
                     : (g.brand_name ?? "–"),
                 ],
+                [
+                  "Link",
+                  links.length === 0
+                    ? "–"
+                    : (
+                        <span className="flex flex-col items-end gap-0.5">
+                          {links.map((l) => (
+                            // Hanya http/https yang lolos saat disimpan, jadi aman dijadikan href.
+                            <a
+                              key={l}
+                              href={l}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="max-w-[260px] truncate underline"
+                            >
+                              {l.replace(/^https?:\/\//, "")}
+                            </a>
+                          ))}
+                        </span>
+                      ),
+                ],
                 ["Catatan internal", g.catatan || "–"],
                 ["Dibuat", `${fmtDateTime(g.created_at)} oleh ${g.created_by_name ?? "–"}`],
               ].map(([k, v]) => (
                 <div
-                  key={k}
+                  key={String(k)}
                   className="flex items-start justify-between gap-3 border-b border-[var(--hairline)] py-2 last:border-0"
                 >
                   <dt className="text-xs text-[var(--text-muted)]">{k}</dt>

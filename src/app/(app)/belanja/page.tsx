@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { connection } from "next/server";
+import Pager, { PER_HALAMAN } from "@/components/Pager";
 import StatTile from "@/components/StatTile";
 import TxFilters from "@/components/TxFilters";
 import TxTable from "@/components/TxTable";
@@ -42,12 +43,18 @@ export default async function BelanjaPage({
     brandId: num(sp, "brand"),
     dompetId: num(sp, "dompet"),
     q: values.q || undefined,
-    limit: 400,
   };
 
-  const rows = listTransaksi(filter);
   const s = getSummary(filter);
+  const perRaw = num(sp, "per");
+  const per = PER_HALAMAN.find((n) => n === perRaw) ?? PER_HALAMAN[0];
+  const pages = Math.max(1, Math.ceil(s.txCount / per));
+  // Halaman di luar jangkauan (mis. setelah filter mempersempit hasil) jatuh
+  // ke halaman terakhir, bukan tabel kosong.
+  const page = Math.min(num(sp, "hal") ?? 1, pages);
+  const rows = listTransaksi({ ...filter, limit: per, offset: (page - 1) * per });
   const opts = txOptions();
+  const biayaHalaman = rows.reduce((a, t) => a + t.delta_biaya, 0);
 
   return (
     <div className="space-y-5">
@@ -100,6 +107,7 @@ export default async function BelanjaPage({
         platform={opts.platform}
         brand={opts.brand}
         dompet={opts.dompet}
+        keep={{ per: String(per) }}
         exportHref={
           hasPerm(me, "exportData")
             ? `/api/export${qs({ ...values, limit: undefined })}`
@@ -111,14 +119,15 @@ export default async function BelanjaPage({
         rows={rows}
         canEdit={hasPerm(me, "editBelanja")}
         canDelete={hasPerm(me, "deleteBelanja")}
+        total={[
+          // Subtotal halaman hanya berguna kalau barisnya terpecah ke beberapa
+          // halaman; di satu halaman angkanya sama persis dengan total filter.
+          ...(pages > 1 ? [{ label: "Total halaman ini", biaya: biayaHalaman }] : []),
+          { label: `Total pengeluaran (${s.txCount} baris sesuai filter)`, biaya: s.biaya },
+        ]}
       />
 
-      {rows.length >= 400 && (
-        <p className="text-xs text-[var(--text-muted)]">
-          Hanya 400 baris teratas yang ditampilkan. Persempit filternya atau
-          ekspor CSV untuk melihat semuanya.
-        </p>
-      )}
+      <Pager path="/belanja" params={values} page={page} per={per} total={s.txCount} />
     </div>
   );
 }

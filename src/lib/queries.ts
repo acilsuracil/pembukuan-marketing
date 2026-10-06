@@ -384,6 +384,8 @@ export interface TxFilter {
   pengajuanId?: number;
   q?: string;
   limit?: number;
+  /** Lewati sekian baris pertama — untuk halaman berikutnya. Hanya berlaku bersama `limit`. */
+  offset?: number;
   sort?: SortKey;
   dir?: SortDir;
 }
@@ -439,7 +441,8 @@ export function listTransaksi(f: TxFilter = {}): TxRow[] {
   const { sql, params } = whereClause(f);
   return all<TxRow>(
     `SELECT * FROM v_transaksi ${sql} ${orderClause(f)}
-     ${f.limit ? `LIMIT ${Number(f.limit)}` : ""}`,
+     ${f.limit ? `LIMIT ${Number(f.limit)}` : ""}
+     ${f.limit && f.offset ? `OFFSET ${Number(f.offset)}` : ""}`,
     ...params,
   );
 }

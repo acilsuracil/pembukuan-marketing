@@ -10,7 +10,7 @@ import {
   EXT_BY_MIME,
   MAX_BUKTI_PER_TX,
 } from "@/lib/bukti";
-import { run, setSetting, tx as inTransaction } from "@/lib/db";
+import { one, run, setSetting, tx as inTransaction } from "@/lib/db";
 import { fmtIdr, todayISO } from "@/lib/format";
 import { JENIS_MANUAL } from "@/lib/jenis";
 import { parseRupiahInt } from "@/lib/num";
@@ -683,12 +683,15 @@ interface PengajuanValues {
   keterangan: string;
   nominal: number;
   tujuan: Tujuan;
-  penerimaId: number | null;
+  /** Rekening penerima yang diketik manual. Hanya ada di rute langsung. */
+  penerima: RekeningInput | null;
   dompetId: number | null;
   brandId: number | null;
   platformId: number | null;
   divisiId: number | null;
   catatan: string;
+  /** Link profil/konten, sudah dirapikan. Disimpan satu per baris. */
+  links: string[];
   /** Porsi per brand. Kosong = brand tunggal lewat `brandId`. */
   porsi: Array<{ brandId: number; nominal: number }>;
 }
@@ -711,8 +714,6 @@ function readPengajuan(
   if (tujuan !== "langsung" && tujuan !== "dompet")
     return { ok: false, error: "Tujuan dana tidak valid." };
 
-  const penerima = optionalId(fd, "penerima_id", "Penerima");
-  if (!penerima.ok) return { ok: false, error: penerima.error };
   const dompet = optionalId(fd, "dompet_id", "Dompet");
   if (!dompet.ok) return { ok: false, error: dompet.error };
   const brand = optionalId(fd, "brand_id", "Brand");
@@ -727,12 +728,16 @@ function readPengajuan(
       ok: false,
       error: "Rute dompet harus menyebut dompet tujuannya, kalau tidak dana cair tidak punya tempat mendarat.",
     };
-  if (tujuan === "langsung" && !penerima.id)
-    return {
-      ok: false,
-      error: "Rute langsung harus menyebut rekening penerimanya — itu yang dikirim ke finance.",
-    };
+  let penerima: RekeningInput | null = null;
+  if (tujuan === "langsung") {
+    const r = readRekening(fd);
+    if (!r.ok) return { ok: false, error: r.error };
+    penerima = r.rek;
+  }
   if (!divisi.id) return { ok: false, error: "Divisi wajib diisi." };
+
+  const links = readLinks(fd);
+  if (!links.ok) return { ok: false, error: links.error };
 
   /*
    * Pembagian ke beberapa brand.
@@ -796,7 +801,7 @@ function readPengajuan(
       keterangan,
       nominal: nominal.n,
       tujuan,
-      penerimaId: tujuan === "langsung" ? penerima.id : null,
+      penerima,
       dompetId: tujuan === "dompet" ? dompet.id : null,
       // Brand tunggal dikosongkan saat dibagi: satu-satunya sumber pembagian
       // adalah tabel porsinya, jadi tidak ada dua tempat yang bisa berselisih.
@@ -804,6 +809,7 @@ function readPengajuan(
       platformId: platform.id,
       divisiId: divisi.id,
       catatan: str(fd, "catatan"),
+      links: links.links,
       porsi,
     },
   };
@@ -841,14 +847,15 @@ export async function savePengajuan(
     // pembagian yang jumlahnya tidak sama dengan nominalnya.
     try {
       inTransaction(() => {
+        const penerimaId = v.penerima ? simpanPenerima(me, v.penerima) : null;
         run(
           `UPDATE pengajuan SET tanggal = ?, keterangan = ?, nominal = ?, tujuan = ?,
                   penerima_id = ?, dompet_id = ?, brand_id = ?, platform_id = ?,
-                  divisi_id = ?, catatan = ?, updated_at = ?
+                  divisi_id = ?, catatan = ?, links = ?, updated_at = ?
            WHERE id = ?`,
-          v.tanggal, v.keterangan, v.nominal, v.tujuan, v.penerimaId, v.dompetId,
-          v.brandId, v.platformId, v.divisiId, v.catatan, new Date().toISOString(),
-          idRead.id,
+          v.tanggal, v.keterangan, v.nominal, v.tujuan, penerimaId, v.dompetId,
+          v.brandId, v.platformId, v.divisiId, v.catatan, v.links.join("\n"),
+          new Date().toISOString(), idRead.id,
         );
         tulisPorsi(idRead.id!, v.porsi);
       });
@@ -864,13 +871,14 @@ export async function savePengajuan(
     const status = str(fd, "status") === "diajukan" ? "diajukan" : "draft";
     try {
       inTransaction(() => {
+        const penerimaId = v.penerima ? simpanPenerima(me, v.penerima) : null;
         const res = run(
           `INSERT INTO pengajuan (tanggal, keterangan, nominal, tujuan, penerima_id,
                                   dompet_id, brand_id, platform_id, divisi_id, status,
-                                  catatan, created_by, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          v.tanggal, v.keterangan, v.nominal, v.tujuan, v.penerimaId, v.dompetId,
-          v.brandId, v.platformId, v.divisiId, status, v.catatan, me.id,
+                                  catatan, links, created_by, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          v.tanggal, v.keterangan, v.nominal, v.tujuan, penerimaId, v.dompetId,
+          v.brandId, v.platformId, v.divisiId, status, v.catatan, v.links.join("\n"), me.id,
           new Date().toISOString(),
         );
         tulisPorsi(Number(res.lastInsertRowid), v.porsi);
@@ -893,6 +901,91 @@ export async function savePengajuan(
       (editing ? "Pengajuan diperbarui." : "Pengajuan tersimpan.") +
       (v.porsi.length ? ` Dibagi ke ${v.porsi.length} brand.` : ""),
   };
+}
+
+const MAX_LINK = 20;
+
+/**
+ * Link profil/konten dari kolom berulang `link`. Yang ditempel tanpa awalan
+ * (mis. "instagram.com/dewi") diberi https:// — itu yang biasa disalin dari
+ * aplikasi — tapi selain http/https ditolak: link ini dibuka orang lain dari
+ * halaman detail, dan `javascript:` di sana sama dengan menjalankan skrip.
+ */
+function readLinks(
+  fd: FormData,
+): { ok: false; error: string } | { ok: true; links: string[] } {
+  const raw = fd.getAll("link").map((x) => String(x).trim()).filter(Boolean);
+  if (raw.length > MAX_LINK) return { ok: false, error: `Link maksimal ${MAX_LINK}.` };
+
+  const links: string[] = [];
+  for (const [i, l] of raw.entries()) {
+    const withScheme = /^[a-z][a-z0-9+.-]*:/i.test(l) ? l : `https://${l}`;
+    let u: URL;
+    try {
+      u = new URL(withScheme);
+    } catch {
+      return { ok: false, error: `Link ${i + 1} ("${l}") bukan alamat yang sah.` };
+    }
+    if ((u.protocol !== "https:" && u.protocol !== "http:") || !u.hostname.includes("."))
+      return { ok: false, error: `Link ${i + 1} ("${l}") harus alamat web http/https.` };
+    if (withScheme.length > 500) return { ok: false, error: `Link ${i + 1} terlalu panjang.` };
+    if (!links.includes(withScheme)) links.push(withScheme);
+  }
+  return { ok: true, links };
+}
+
+interface RekeningInput {
+  nama: string;
+  bank: string;
+  noRek: string;
+}
+
+/** Rekening penerima yang diketik langsung di formulir pengajuan. */
+function readRekening(
+  fd: FormData,
+): { ok: false; error: string } | { ok: true; rek: RekeningInput } {
+  const noRek = str(fd, "penerima_no_rek");
+  const nama = str(fd, "penerima_nama");
+  const bank = str(fd, "penerima_bank");
+  if (noRek === "" || nama === "" || bank === "")
+    return {
+      ok: false,
+      error:
+        "Rute langsung butuh nomor rekening, nama pemilik, dan bank/e-wallet — itu yang dikirim ke finance.",
+    };
+  if (!/^[0-9 .-]{4,32}$/.test(noRek))
+    return { ok: false, error: "Nomor rekening hanya angka, spasi, titik, atau strip." };
+  if (nama.length < 2) return { ok: false, error: "Nama pemilik rekening minimal 2 karakter." };
+  return { ok: true, rek: { nama, bank, noRek } };
+}
+
+/**
+ * Mencari rekening di daftar penerima, atau menambahkannya kalau belum ada.
+ *
+ * Nomor dicocokkan tanpa spasi/titik/strip dan nama/bank tanpa beda huruf
+ * besar-kecil: "BCA 123 456" dan "bca 123456" rekening yang sama, dan dua baris
+ * untuknya akan memecah riwayat transfer ke satu orang jadi dua. Rekening yang
+ * pernah diarsipkan dihidupkan lagi, bukan diduplikasi.
+ */
+function simpanPenerima(me: SessionUser, r: RekeningInput): number {
+  const digits = r.noRek.replace(/[ .-]/g, "");
+  const ada = one<{ id: number; archived: number }>(
+    `SELECT id, archived FROM penerima
+     WHERE REPLACE(REPLACE(REPLACE(no_rek, ' ', ''), '.', ''), '-', '') = ?
+       AND LOWER(bank) = LOWER(?) AND LOWER(nama) = LOWER(?)
+     ORDER BY archived, id LIMIT 1`,
+    digits, r.bank, r.nama,
+  );
+  if (ada) {
+    if (ada.archived) run(`UPDATE penerima SET archived = 0 WHERE id = ?`, ada.id);
+    return ada.id;
+  }
+  const res = run(
+    `INSERT INTO penerima (nama, bank, no_rek, note, created_at) VALUES (?, ?, ?, '', ?)`,
+    r.nama, r.bank, r.noRek, new Date().toISOString(),
+  );
+  logActivity(me, "tambah-penerima", `${r.nama} ${r.bank} ${r.noRek} (dari pengajuan)`);
+  return Number(res.lastInsertRowid);
 }
 
 /** Menulis ulang porsi brand sebuah pengajuan. Daftar kosong = brand tunggal. */

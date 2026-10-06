@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { savePengajuan, type ActionState } from "@/app/actions";
-import { fmtIdr, todayISO } from "@/lib/format";
+import { brandFinance, fmtIdr, linkFinance, pisahLink, todayISO } from "@/lib/format";
 import { parseRupiah } from "@/lib/num";
 import { bagiRata } from "@/lib/split";
 import type { PengajuanBrand, PengajuanRow, Tujuan } from "@/lib/types";
@@ -21,7 +21,26 @@ export interface Opt {
   divisiId?: number | null;
   /** Baris rekening siap tempel untuk format ke finance. */
   rek?: string;
+  /** Rincian rekening penerima — untuk mengisi otomatis kolom manualnya. */
+  bank?: string;
+  noRek?: string;
 }
+
+/** Nomor rekening tanpa pemisah, supaya "123 456" dan "123456" dianggap sama. */
+const digitRek = (s: string) => s.replace(/[ .-]/g, "");
+
+/** Bentuknya sama dengan `rekLine` di lib/opts — itu modul server. */
+function rekLine(bank: string, noRek: string, nama: string): string {
+  const kiri = [bank, noRek].filter(Boolean).join(" ");
+  return kiri ? `${kiri} (${nama})` : nama;
+}
+
+/** Nama bank dan e-wallet yang umum, sebagai saran ketik. */
+const BANK_UMUM = [
+  "BCA", "BRI", "BNI", "Mandiri", "BSI", "CIMB Niaga", "Permata", "Danamon",
+  "BTN", "Bank Jago", "Jenius", "SeaBank", "blu by BCA", "DANA", "OVO",
+  "GoPay", "ShopeePay", "LinkAja",
+];
 
 /** Satu baris pembagian di formulir. `key` hanya untuk React. */
 interface Porsi {
@@ -58,11 +77,18 @@ export default function PengajuanForm({
   const [nominalText, setNominalText] = useState(
     initial ? String(initial.nominal) : "",
   );
-  const [penerimaId, setPenerimaId] = useState(String(initial?.penerima_id ?? ""));
+  const [rekNo, setRekNo] = useState(initial?.penerima_no_rek ?? "");
+  const [rekNama, setRekNama] = useState(initial?.penerima_nama ?? "");
+  const [rekBank, setRekBank] = useState(initial?.penerima_bank ?? "");
   const [dompetId, setDompetId] = useState(String(initial?.dompet_id ?? ""));
   const [brandId, setBrandId] = useState(String(initial?.brand_id ?? ""));
   const [platformId, setPlatformId] = useState(String(initial?.platform_id ?? ""));
   const [divisiId, setDivisiId] = useState(String(initial?.divisi_id ?? ""));
+  // Selalu ada minimal satu kotak link, walau kosong — tombol tambah menyusul.
+  const [links, setLinks] = useState<string[]>(() => {
+    const ada = pisahLink(initial?.links);
+    return ada.length > 0 ? ada : [""];
+  });
 
   // Pembagian ke beberapa brand. Penomor kunci baris hidup di ref, bukan state:
   // ia tidak pernah memengaruhi tampilan, dan state yang ikut jadi dependency
@@ -100,6 +126,58 @@ export default function PengajuanForm({
     else router.push("/pengajuan");
   }, [state.ok, editing, initial, router]);
 
+  // Rekening yang cocok persis dengan isian — penanda "sudah tersimpan".
+  const rekTersimpan = penerima.find(
+    (p) =>
+      digitRek(p.noRek ?? "") === digitRek(rekNo.trim()) &&
+      (p.bank ?? "").toLowerCase() === rekBank.trim().toLowerCase() &&
+      p.label.toLowerCase() === rekNama.trim().toLowerCase(),
+  );
+  const rekLengkap = rekNo.trim() !== "" && rekNama.trim() !== "" && rekBank.trim() !== "";
+  const saranBank = useMemo(
+    () =>
+      [...new Set([...penerima.map((p) => p.bank ?? ""), ...BANK_UMUM])].filter(Boolean),
+    [penerima],
+  );
+
+  const saranNama = useMemo(
+    () => [...new Set(penerima.map((p) => p.label))],
+    [penerima],
+  );
+
+  // Rekening tersimpan yang cocok dengan isian tapi lebih dari satu — misalnya
+  // dua orang bernama sama di bank berbeda. Tidak ditebak: orangnya memilih.
+  const [pilihan, setPilihan] = useState<Opt[]>([]);
+
+  const pakaiRekening = (p: Opt) => {
+    setRekNo(p.noRek ?? "");
+    setRekNama(p.label);
+    setRekBank(p.bank ?? "");
+    setPilihan([]);
+  };
+
+  /** Satu kecocokan langsung terisi; lebih dari satu dibuka jadi pilihan. */
+  const cocokkan = (cocok: Opt[]) => {
+    if (cocok.length === 1) pakaiRekening(cocok[0]);
+    else setPilihan(cocok.length > 1 ? cocok : []);
+  };
+
+  /** Nomor yang sudah pernah tersimpan mengisi nama dan bank sendiri. */
+  const ubahNoRek = (value: string) => {
+    setRekNo(value);
+    const d = digitRek(value.trim());
+    if (d.length < 4) return setPilihan([]);
+    cocokkan(penerima.filter((p) => digitRek(p.noRek ?? "") === d));
+  };
+
+  /** Nama yang sudah pernah tersimpan mengisi nomor dan bank sendiri. */
+  const ubahNama = (value: string) => {
+    setRekNama(value);
+    const n = value.trim().toLowerCase();
+    if (n.length < 2) return setPilihan([]);
+    cocokkan(penerima.filter((p) => p.label.toLowerCase() === n));
+  };
+
   const label = (list: Opt[], id: string) =>
     list.find((o) => String(o.id) === id)?.label ?? "";
 
@@ -113,30 +191,30 @@ export default function PengajuanForm({
     const rek =
       tujuan === "dompet"
         ? (dompet.find((d) => String(d.id) === dompetId)?.rek ?? "")
-        : (penerima.find((p) => String(p.id) === penerimaId)?.rek ?? "");
+        : rekNama.trim() && rekLine(rekBank.trim(), rekNo.trim(), rekNama.trim());
     // Pembagian ikut ditulis ke finance apa adanya: merekalah yang mentransfer,
     // dan porsi yang cuma hidup di panel akan jadi tebakan saat dicocokkan nanti.
-    const barisBrand = multi
-      ? porsi
-          .filter((p) => p.brandId !== "")
-          .map((p) => {
-            const n = parseRupiah(p.nominal);
-            return `${label(brand, p.brandId)} ${n === null ? "—" : fmtIdr(n)}`;
-          })
-          .join(" + ")
-      : label(brand, brandId);
+    const barisBrand = brandFinance(
+      label(brand, brandId),
+      multi
+        ? porsi
+            .filter((p) => p.brandId !== "")
+            .map((p) => ({ nama: label(brand, p.brandId), nominal: parseRupiah(p.nominal) }))
+        : [],
+    );
 
     return [
       `Keterangan : ${keterangan || "—"}`,
       `Nominal : ${nominal === null ? "—" : fmtIdr(nominal)}`,
       `Rekening : ${rek || "—"}`,
-      `Brand : ${barisBrand || "—"}`,
+      barisBrand,
       `Platform : ${label(platform, platformId) || "—"}`,
       `Divisi : ${label(divisi, divisiId) || "—"}`,
+      ...linkFinance(links.map((l) => l.trim()).filter(Boolean)),
     ].join("\n");
   }, [
-    keterangan, nominalText, tujuan, dompetId, penerimaId, brandId, platformId,
-    divisiId, brand, platform, divisi, dompet, penerima, multi, porsi,
+    keterangan, nominalText, tujuan, dompetId, rekNo, rekNama, rekBank, brandId, platformId,
+    divisiId, brand, platform, divisi, dompet, multi, porsi, links,
   ]);
 
   return (
@@ -188,6 +266,55 @@ export default function PengajuanForm({
         </div>
 
         <fieldset>
+          <legend className="label">
+            Link <span className="font-normal text-[var(--text-muted)]">(opsional)</span>
+          </legend>
+          <div className="space-y-2">
+            {links.map((l, i) => (
+              // Kunci pakai urutan: isinya bisa kembar selagi diketik.
+              <div key={i} className="flex gap-2">
+                <input
+                  name="link"
+                  type="text"
+                  inputMode="url"
+                  autoComplete="off"
+                  className="field"
+                  placeholder="mis. instagram.com/namaakun"
+                  aria-label={`Link ${i + 1}`}
+                  value={l}
+                  onChange={(e) =>
+                    setLinks((ls) => ls.map((x, j) => (j === i ? e.target.value : x)))
+                  }
+                />
+                {links.length > 1 && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost px-2.5"
+                    aria-label={`Buang link ${i + 1}`}
+                    onClick={() => setLinks((ls) => ls.filter((_, j) => j !== i))}
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="mt-1.5 flex items-center justify-between gap-2">
+            <p className="hint mt-0">
+              Profil atau konten yang dikontrak. Ikut terkirim ke finance.
+            </p>
+            <button
+              type="button"
+              className="btn btn-ghost shrink-0 px-2.5 py-1 text-xs"
+              disabled={links.length >= 20}
+              onClick={() => setLinks((ls) => [...ls, ""])}
+            >
+              + Tambah link
+            </button>
+          </div>
+        </fieldset>
+
+        <fieldset>
           <legend className="label">Dana dikirim ke mana</legend>
           <div className="flex flex-col gap-2 sm:flex-row">
             {(
@@ -232,32 +359,116 @@ export default function PengajuanForm({
         </fieldset>
 
         {tujuan === "langsung" ? (
-          <div>
-            <label className="label" htmlFor="p-penerima">
-              Rekening penerima
-            </label>
-            <select
-              id="p-penerima"
-              name="penerima_id"
-              className="field"
-              value={penerimaId}
-              onChange={(e) => setPenerimaId(e.target.value)}
-            >
-              <option value="">— pilih penerima —</option>
-              {penerima.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.rek ?? p.label}
-                </option>
-              ))}
-            </select>
+          <fieldset>
+            <legend className="label">Rekening penerima</legend>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div>
+                <label className="text-xs text-[var(--text-muted)]" htmlFor="p-rek-no">
+                  Nomor rekening
+                </label>
+                <input
+                  id="p-rek-no"
+                  name="penerima_no_rek"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  required
+                  list="p-rek-no-list"
+                  className="field tnum"
+                  placeholder="mis. 1234567890"
+                  value={rekNo}
+                  onChange={(e) => ubahNoRek(e.target.value)}
+                />
+                <datalist id="p-rek-no-list">
+                  {penerima
+                    .filter((p) => p.noRek)
+                    .map((p) => (
+                      <option key={p.id} value={p.noRek}>
+                        {p.rek}
+                      </option>
+                    ))}
+                </datalist>
+              </div>
+              <div>
+                <label className="text-xs text-[var(--text-muted)]" htmlFor="p-rek-nama">
+                  Nama rekening
+                </label>
+                <input
+                  id="p-rek-nama"
+                  name="penerima_nama"
+                  type="text"
+                  autoComplete="off"
+                  required
+                  minLength={2}
+                  className="field"
+                  list="p-rek-nama-list"
+                  placeholder="nama pemilik rekening"
+                  value={rekNama}
+                  onChange={(e) => ubahNama(e.target.value)}
+                />
+                <datalist id="p-rek-nama-list">
+                  {saranNama.map((n) => (
+                    <option key={n} value={n} />
+                  ))}
+                </datalist>
+              </div>
+              <div>
+                <label className="text-xs text-[var(--text-muted)]" htmlFor="p-rek-bank">
+                  Bank / e-wallet
+                </label>
+                <input
+                  id="p-rek-bank"
+                  name="penerima_bank"
+                  type="text"
+                  autoComplete="off"
+                  required
+                  list="p-rek-bank-list"
+                  className="field"
+                  placeholder="mis. BCA, DANA"
+                  value={rekBank}
+                  onChange={(e) => setRekBank(e.target.value)}
+                />
+                <datalist id="p-rek-bank-list">
+                  {saranBank.map((b) => (
+                    <option key={b} value={b} />
+                  ))}
+                </datalist>
+              </div>
+            </div>
+            {pilihan.length > 1 && (
+              <div className="mt-3">
+                <label className="text-xs text-[var(--text-muted)]" htmlFor="p-rek-pilih">
+                  Ada {pilihan.length} rekening yang cocok — pilih salah satu
+                </label>
+                {/* Tanpa `name`: ini hanya pemilih, yang terkirim tetap tiga kolom di atas. */}
+                <select
+                  id="p-rek-pilih"
+                  className="field"
+                  value=""
+                  onChange={(e) => {
+                    const p = pilihan.find((x) => String(x.id) === e.target.value);
+                    if (p) pakaiRekening(p);
+                  }}
+                >
+                  <option value="">— pilih rekening —</option>
+                  {pilihan.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.rek ?? p.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <p className="hint">
-              Belum ada di daftar?{" "}
-              <Link href="/master/penerima" className="underline">
-                tambah rekening penerima
-              </Link>
-              .
+              {pilihan.length > 1
+                ? "Belum dipilih — atau lanjut ketik kalau ini rekening baru."
+                : !rekLengkap
+                  ? "Ketik nomor atau nama yang pernah dipakai, sisanya terisi sendiri."
+                  : rekTersimpan
+                    ? "✓ Rekening ini sudah ada di daftar penerima."
+                    : "Rekening baru — otomatis masuk daftar penerima saat pengajuan disimpan."}
             </p>
-          </div>
+          </fieldset>
         ) : (
           <div>
             <label className="label" htmlFor="p-dompet">
