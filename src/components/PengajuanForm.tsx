@@ -57,8 +57,14 @@ export default function PengajuanForm({
   brand,
   platform,
   divisi,
+  mini = false,
+  divisiAwal,
 }: {
   initial?: PengajuanRow;
+  /** Dibuka dari Mini App Telegram: selesai/batal menutup Mini App, bukan pindah halaman. */
+  mini?: boolean;
+  /** Divisi bawaan — dari grup divisi tempat /ajukan diketik. Tetap bisa diganti. */
+  divisiAwal?: number;
   /** Pembagian yang sudah tersimpan, saat mengubah pengajuan. */
   porsiAwal?: PengajuanBrand[];
   penerima: Opt[];
@@ -83,7 +89,7 @@ export default function PengajuanForm({
   const [dompetId, setDompetId] = useState(String(initial?.dompet_id ?? ""));
   const [brandId, setBrandId] = useState(String(initial?.brand_id ?? ""));
   const [platformId, setPlatformId] = useState(String(initial?.platform_id ?? ""));
-  const [divisiId, setDivisiId] = useState(String(initial?.divisi_id ?? ""));
+  const [divisiId, setDivisiId] = useState(String(initial?.divisi_id ?? divisiAwal ?? ""));
   // Selalu ada minimal satu kotak link, walau kosong — tombol tambah menyusul.
   const [links, setLinks] = useState<string[]>(() => {
     const ada = pisahLink(initial?.links);
@@ -122,9 +128,15 @@ export default function PengajuanForm({
 
   useEffect(() => {
     if (!state.ok) return;
+    if (mini) {
+      // Pesan sukses sempat terbaca dulu, baru Mini App ditutup.
+      const t = setTimeout(() => window.Telegram?.WebApp?.close(), 1800);
+      return () => clearTimeout(t);
+    }
     if (editing) router.push(`/pengajuan/${initial!.id}`);
     else router.push("/pengajuan");
-  }, [state.ok, editing, initial, router]);
+  }, [state.ok, editing, initial, router, mini]);
+
 
   // Rekening yang cocok persis dengan isian — penanda "sudah tersimpan".
   const rekTersimpan = penerima.find(
@@ -217,8 +229,16 @@ export default function PengajuanForm({
     divisiId, brand, platform, divisi, dompet, multi, porsi, links,
   ]);
 
+  if (mini && state.ok)
+    return (
+      <div className="card p-5 text-sm">
+        <p className="font-medium">✅ Pengajuan terkirim</p>
+        <p className="mt-1 text-[var(--text-muted)]">{state.message}</p>
+      </div>
+    );
+
   return (
-    <div className="grid items-start gap-4 lg:grid-cols-[1fr_320px]">
+    <div className={mini ? "grid gap-4" : "grid items-start gap-4 lg:grid-cols-[1fr_320px]"}>
       <form ref={formRef} action={action} className="card space-y-4 p-4 sm:p-5">
         {editing && <input type="hidden" name="id" value={initial!.id} />}
         <Alert state={state} />
@@ -759,22 +779,33 @@ export default function PengajuanForm({
                   ? "Simpan perubahan"
                   : "Ajukan"}
           </FormButton>
-          <Link
-            href={editing ? `/pengajuan/${initial!.id}` : "/pengajuan"}
-            className="btn btn-ghost"
-          >
-            Batal
-          </Link>
+          {mini ? (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => window.Telegram?.WebApp?.close()}
+            >
+              Batal
+            </button>
+          ) : (
+            <Link
+              href={editing ? `/pengajuan/${initial!.id}` : "/pengajuan"}
+              className="btn btn-ghost"
+            >
+              Batal
+            </Link>
+          )}
         </div>
       </form>
 
-      <section className="card p-4 sm:p-5">
+      {/* Di Mini App teks salinan tidak perlu: bot yang mengirimkannya ke grup. */}
+      {!mini && <section className="card p-4 sm:p-5">
         <h2 className="text-sm font-semibold">Format untuk finance</h2>
         <p className="mt-0.5 mb-3 text-xs text-[var(--text-muted)]">
           Isi formulirnya, lalu tempel teks ini ke chat finance.
         </p>
         <CopyBox text={format} />
-      </section>
+      </section>}
     </div>
   );
 }

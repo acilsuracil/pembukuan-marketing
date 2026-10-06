@@ -12,6 +12,7 @@
  *
  *   node scripts/cek-telegram.mjs http://localhost:3002 /path/marketing.db
  */
+import crypto from "node:crypto";
 import http from "node:http";
 import { DatabaseSync } from "node:sqlite";
 
@@ -60,7 +61,9 @@ const fake = http.createServer((req, res) => {
     }
     calls.push({ method, body });
     const result =
-      method === "getFile"
+      method === "getMe"
+        ? { username: "botuji" }
+        : method === "getFile"
         ? { file_path: `photos/${body.file_id}.jpg` }
         : method === "sendMessage" || method === "sendPhoto"
           ? { message_id: nextMsg++ }
@@ -287,6 +290,79 @@ step("Leader yang mengajukan sendiri langsung ke grup pembayaran");
   const g3 = await ajukan("Diajukan leader sendiri");
   check("tahap leader terlewati", Boolean(one(`SELECT leader_at FROM pengajuan WHERE id=?`, g3.id).leader_at), true);
   check("langsung diposting ke grup pembayaran", panggilan("sendMessage").some((c) => c.body.chat_id === GRUP_BAYAR), true);
+}
+
+step("Mini App: masuk dengan initData bertanda tangan, lalu mengajukan");
+{
+  /** initData seperti yang dibuat Telegram, ditandatangani dengan token bot uji. */
+  const initData = (tgId, token = "uji") => {
+    const p = new URLSearchParams({
+      auth_date: String(Math.floor(Date.now() / 1000)),
+      query_id: "q1",
+      user: JSON.stringify({ id: tgId, first_name: "Uji" }),
+    });
+    const dc = [...p.entries()].map(([k, v]) => `${k}=${v}`).sort().join("\n");
+    const secret = crypto.createHmac("sha256", "WebAppData").update(token).digest();
+    p.set("hash", crypto.createHmac("sha256", secret).update(dc).digest("hex"));
+    return p.toString();
+  };
+  const masuk = (data) =>
+    fetch(`${BASE}/api/mini/masuk`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ initData: data }),
+    });
+
+  check("tanda tangan palsu ditolak", (await masuk(initData(TG.berto, "token-lain"))).status, 401);
+  check("akun Telegram tak terdaftar ditolak", (await masuk(initData(424242))).status, 403);
+
+  const r = await masuk(initData(TG.rina));
+  check("akun terdaftar diterima", r.status, 200);
+  cookie = (r.headers.getSetCookie?.() ?? []).find((c) => c.startsWith("ledger_sess="))?.split(";")[0] ?? "";
+  check("sesi Mini App dibuat", cookie !== "", true);
+
+  const endorse = one(`SELECT id FROM divisi WHERE name='Endorse'`).id;
+  const form = await get(`/mini/ajukan?divisi=${endorse}`);
+  check("formulir Mini App terbuka", form.status, 200);
+  check("divisi grup sudah terpilih", new RegExp(`value="${endorse}" selected`).test(form.body), true);
+
+  calls = [];
+  const sebelum = one(`SELECT COUNT(*) AS n FROM pengajuan`).n;
+  await submit(`/mini/ajukan?divisi=${endorse}`, 'name="keterangan"', {
+    tanggal: "2026-09-02",
+    keterangan: "Diajukan dari Mini App",
+    nominal: "750.000",
+    tujuan: "dompet",
+    dompet_id: one(`SELECT id FROM dompet LIMIT 1`).id,
+    platform_id: "",
+    divisi_id: endorse,
+    brand_id: "",
+    catatan: "",
+  });
+  const g = one(`SELECT * FROM pengajuan ORDER BY id DESC LIMIT 1`);
+  check("pengajuan dari Mini App tersimpan", one(`SELECT COUNT(*) AS n FROM pengajuan`).n, sebelum + 1);
+  check("atas nama akun Telegram-nya", g.created_by, one(`SELECT id FROM users WHERE username='rina'`).id);
+  check("rute dompet bisa dari Mini App", g.tujuan, "dompet");
+}
+
+step("/ajukan di grup divisi memberi tautan yang membawa divisinya");
+{
+  calls = [];
+  await webhook({
+    message: { message_id: 9, chat: { id: GRUP_DIVISI, type: "supergroup" }, from: { id: TG.berto }, text: "/ajukan" },
+  });
+  const endorse = one(`SELECT id FROM divisi WHERE name='Endorse'`).id;
+  const balas = panggilan("sendMessage").find((c) => c.body.chat_id === GRUP_DIVISI);
+  check("tautan ke chat pribadi bot", balas?.body.reply_markup.inline_keyboard[0][0].url, `https://t.me/botuji?start=ajukan_${endorse}`);
+
+  calls = [];
+  await kirim(TG.berto, { text: `/start ajukan_${endorse}` });
+  const buka = panggilan("sendMessage").find((c) => c.body.chat_id === TG.berto);
+  check(
+    "chat pribadi membuka Mini App dengan divisinya",
+    buka?.body.reply_markup.inline_keyboard[0][0].web_app?.url.endsWith(`/mini?divisi=${endorse}`),
+    true,
+  );
 }
 
 fake.close();

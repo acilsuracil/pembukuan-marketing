@@ -16,7 +16,7 @@ import {
 } from "@/lib/persetujuan";
 import { logActivity } from "@/lib/policy";
 import { getPengajuan, listDivisi } from "@/lib/queries";
-import { esc, jawabTombol, kirimPesan, ubahPesan, unduhBerkas } from "@/lib/telegram";
+import { esc, jawabTombol, kirimPesan, namaBot, ubahPesan, unduhBerkas } from "@/lib/telegram";
 
 /**
  * Webhook bot Telegram.
@@ -213,6 +213,8 @@ async function pesan(m: TgMessage) {
     );
   }
 
+  if (perintah === "/ajukan") return tombolAjukan(m);
+
   if (perintah === "/grupbayar" || perintah === "/grupdivisi") {
     if (m.chat.type === "private")
       return kirimPesan(m.chat.id, "Perintah ini dipakai di dalam grup, bukan di chat pribadi.");
@@ -235,6 +237,10 @@ async function pesan(m: TgMessage) {
   }
 
   if (m.chat.type !== "private" || !from) return;
+
+  // /start ajukan_<divisi> — datang dari tombol /ajukan di grup divisi.
+  const dariGrup = /^\/start\s+ajukan(?:_(\d+))?$/.exec(teks);
+  if (dariGrup) return kirimPesan(m.chat.id, "Silakan isi pengajuannya:", bukaMiniApp(dariGrup[1]));
 
   if (perintah === "/start")
     return kirimPesan(
@@ -308,6 +314,37 @@ async function pesan(m: TgMessage) {
   if (baru && data.pesan) await ubahPesan(m.chat.id, data.pesan, "⬇️ lanjut di bawah");
   if (baru) data.pesan = baru.message_id;
   run(`UPDATE telegram_tunggu SET data = ? WHERE telegram_id = ?`, JSON.stringify(data), from.id);
+}
+
+/* ================================================================ mini app */
+
+const urlMini = (divisi?: string) =>
+  `${(process.env.PUBLIC_URL || "https://pembukuan-rupiah.com").replace(/\/$/, "")}/mini${divisi ? `?divisi=${divisi}` : ""}`;
+
+/** Tombol pembuka Mini App — hanya boleh di chat pribadi (aturan Telegram). */
+const bukaMiniApp = (divisi?: string) => [
+  [{ text: "📝 Ajukan dana", web_app: { url: urlMini(divisi) } }],
+];
+
+/**
+ * /ajukan. Di chat pribadi langsung membuka Mini App. Di grup, Telegram tidak
+ * mengizinkan tombol Mini App, jadi bot memberi tautan ke chat pribadinya yang
+ * membawa divisi grup itu — formulirnya terbuka dengan divisi sudah terpilih.
+ */
+async function tombolAjukan(m: TgMessage) {
+  if (m.chat.type === "private")
+    return kirimPesan(m.chat.id, "Silakan isi pengajuannya:", bukaMiniApp());
+  const d = one<{ id: number; name: string }>(
+    `SELECT id, name FROM divisi WHERE telegram_chat_id = ? AND archived = 0`,
+    m.chat.id,
+  );
+  const bot = await namaBot();
+  if (!bot) return;
+  return kirimPesan(
+    m.chat.id,
+    `Buat pengajuan${d ? ` divisi <b>${esc(d.name)}</b>` : ""} — formulirnya terbuka di chat pribadi dengan bot:`,
+    [[{ text: "📝 Ajukan dana", url: `https://t.me/${bot}?start=ajukan${d ? `_${d.id}` : ""}` }]],
+  );
 }
 
 /* ============================================================ bukti bayar */

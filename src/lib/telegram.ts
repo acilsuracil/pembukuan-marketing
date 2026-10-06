@@ -1,3 +1,5 @@
+import crypto from "node:crypto";
+
 /**
  * Klien Bot API Telegram yang tipis.
  *
@@ -7,10 +9,11 @@
  * atau pembayaran. Kegagalan dicatat ke log server dan hasilnya `null`.
  */
 
-export interface TgButton {
-  text: string;
-  callback_data: string;
-}
+/** Tombol inline: memanggil bot, membuka tautan, atau membuka Mini App. */
+export type TgButton =
+  | { text: string; callback_data: string }
+  | { text: string; url: string }
+  | { text: string; web_app: { url: string } };
 
 /** Token dari env. Tanpa token, bot dianggap tidak dipasang dan semua kiriman dilewati. */
 function token(): string | null {
@@ -182,4 +185,61 @@ export async function pasangWebhook(url: string, secret: string): Promise<unknow
     allowed_updates: ["message", "callback_query"],
     drop_pending_updates: true,
   });
+}
+
+export interface MiniUser {
+  id: number;
+  first_name?: string;
+  username?: string;
+}
+
+/**
+ * Memeriksa `initData` kiriman Mini App Telegram.
+ *
+ * Telegram menandatangani data pembuka Mini App dengan kunci turunan token bot
+ * (HMAC-SHA256, kunci "WebAppData"). Hanya server yang memegang token yang bisa
+ * mencocokkannya — jadi ID pengguna di dalamnya tidak bisa dipalsukan oleh
+ * siapa pun yang sekadar membuka /mini di browser. Data yang lebih tua dari
+ * sehari ditolak supaya tautan lama tidak bisa diputar ulang.
+ */
+export function cekInitData(
+  initData: string,
+): { user: MiniUser; startParam: string } | null {
+  const t = token();
+  if (!t || !initData) return null;
+
+  const params = new URLSearchParams(initData);
+  const hash = params.get("hash");
+  if (!hash) return null;
+  params.delete("hash");
+  const dataCheck = [...params.entries()]
+    .map(([k, v]) => `${k}=${v}`)
+    .sort()
+    .join("\n");
+
+  const secret = crypto.createHmac("sha256", "WebAppData").update(t).digest();
+  const hitung = crypto.createHmac("sha256", secret).update(dataCheck).digest("hex");
+  const a = Buffer.from(hitung, "hex");
+  const b = Buffer.from(hash, "hex");
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+
+  const authDate = Number(params.get("auth_date"));
+  if (!authDate || Date.now() / 1000 - authDate > 86_400) return null;
+
+  try {
+    const user = JSON.parse(params.get("user") ?? "null") as MiniUser | null;
+    if (!user?.id) return null;
+    return { user, startParam: params.get("start_param") ?? "" };
+  } catch {
+    return null;
+  }
+}
+
+/** Username bot (tanpa @), dibaca sekali dari Telegram lalu diingat. */
+let usernameBot: string | null = null;
+export async function namaBot(): Promise<string | null> {
+  if (usernameBot) return usernameBot;
+  const me = await call<{ username: string }>("getMe", {});
+  usernameBot = me?.username ?? null;
+  return usernameBot;
 }

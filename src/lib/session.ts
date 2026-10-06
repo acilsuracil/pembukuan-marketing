@@ -74,12 +74,21 @@ async function isHttps(): Promise<boolean> {
   return /^https:/i.test(process.env.PUBLIC_URL || "");
 }
 
-export async function startSession(user: SessionUser) {
+/**
+ * `mini`: sesi yang dibuka dari Mini App Telegram. Di Telegram Web, Mini App
+ * tampil dalam iframe di web.telegram.org — cookie SameSite=Lax tidak ikut
+ * terkirim di sana, jadi sesi itu memakai SameSite=None + Partitioned (cookie
+ * yang hanya hidup di dalam iframe Telegram, tidak bocor ke situs lain).
+ * Server action tetap terlindungi CSRF lewat pemeriksaan Origin bawaan Next.
+ */
+export async function startSession(user: SessionUser, opts: { mini?: boolean } = {}) {
   const jar = await cookies();
+  const https = await isHttps();
   jar.set(SESSION_COOKIE, newToken(user), {
     httpOnly: true,
-    sameSite: "lax",
-    secure: await isHttps(),
+    sameSite: opts.mini && https ? "none" : "lax",
+    secure: https,
+    partitioned: opts.mini && https ? true : undefined,
     path: "/",
     maxAge: Math.floor(SESSION_TTL_MS / 1000),
   });

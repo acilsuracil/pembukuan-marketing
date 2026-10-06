@@ -20,12 +20,26 @@ const nextConfig: NextConfig = {
     },
   },
   // Panel ini menyajikan data keuangan — jangan sampai ter-embed di situs lain.
+  // Satu-satunya pengecualian: Mini App (/mini), yang di Telegram Web tampil
+  // di dalam iframe web.telegram.org — dan hanya boleh di-embed oleh Telegram.
   async headers() {
     return [
       {
+        source: "/((?!mini).*)",
+        headers: [{ key: "X-Frame-Options", value: "DENY" }],
+      },
+      {
+        source: "/mini/:path*",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value: "frame-ancestors 'self' https://web.telegram.org https://*.telegram.org",
+          },
+        ],
+      },
+      {
         source: "/:path*",
         headers: [
-          { key: "X-Frame-Options", value: "DENY" },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "same-origin" },
           {
