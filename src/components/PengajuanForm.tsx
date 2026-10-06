@@ -599,21 +599,28 @@ export default function PengajuanForm({
             <label className="label" htmlFor="p-brand">
               Brand
             </label>
-            <select
-              id="p-brand"
-              name="brand_id"
-              className="field"
-              value={multi ? "" : brandId}
-              disabled={multi}
-              onChange={(e) => setBrandId(e.target.value)}
-            >
-              <option value="">{multi ? "— dibagi beberapa brand —" : "— tanpa brand —"}</option>
-              {brand.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.label}
-                </option>
-              ))}
-            </select>
+            {/* Saat dibagi, brand diatur di tabel pembagian. Dropdown yang
+                dikunci di sini membuat orang mengira pilihannya macet. */}
+            {multi ? (
+              <p className="field text-[var(--text-muted)]">
+                Dibagi ke {porsi.length} brand — atur di tabel di bawah
+              </p>
+            ) : (
+              <select
+                id="p-brand"
+                name="brand_id"
+                className="field"
+                value={brandId}
+                onChange={(e) => setBrandId(e.target.value)}
+              >
+                <option value="">— tanpa brand —</option>
+                {brand.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.label}
+                  </option>
+                ))}
+              </select>
+            )}
             <label className="mt-1.5 flex cursor-pointer items-center gap-1.5 text-xs">
               <input
                 type="checkbox"
@@ -706,11 +713,18 @@ export default function PengajuanForm({
                           type="button"
                           className="btn btn-ghost px-2 py-1 text-xs"
                           aria-label={`Buang baris ${i + 1}`}
-                          onClick={() =>
-                            setPorsi((rs) =>
-                              rs.length > 2 ? rs.filter((r) => r.key !== p.key) : rs,
-                            )
-                          }
+                          onClick={() => {
+                            if (porsi.length > 2) {
+                              setPorsi((rs) => rs.filter((r) => r.key !== p.key));
+                              return;
+                            }
+                            // Pembagian butuh minimal dua brand. Membuang satu dari
+                            // dua berarti kembali ke brand tunggal — brand yang
+                            // tersisa dipakai, bukan tombol yang diam saja.
+                            const sisa = porsi.find((r) => r.key !== p.key);
+                            setBrandId(sisa?.brandId ?? "");
+                            setMulti(false);
+                          }}
                         >
                           ✕
                         </button>
@@ -744,6 +758,11 @@ export default function PengajuanForm({
               >
                 Bagi rata
               </button>
+              {nominalAngka <= 0 && (
+                <span className="text-xs text-[var(--text-muted)]">
+                  Isi nominal yang diminta dulu untuk bagi rata.
+                </span>
+              )}
 
               <span className="ml-auto text-xs">
                 <span className="text-[var(--text-muted)]">Jumlah porsi </span>
