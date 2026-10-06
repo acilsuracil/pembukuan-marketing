@@ -11,6 +11,7 @@ import {
   firstDayOfMonth,
   fmtDate,
   fmtIdr,
+  judulKeterangan,
   lastDayOfMonth,
   monthLabelLong,
   todayISO,
@@ -191,7 +192,7 @@ export default async function RingkasanPage() {
                         href={`/pengajuan/${g.id}`}
                         className="font-medium hover:underline"
                       >
-                        {g.keterangan}
+                        {judulKeterangan(g.keterangan)}
                       </Link>
                       <span className="tnum whitespace-nowrap">{fmtIdr(g.nominal)}</span>
                     </div>

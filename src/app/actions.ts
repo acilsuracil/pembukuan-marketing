@@ -685,7 +685,15 @@ function readPengajuan(
   if (!ISO_DATE.test(tanggal))
     return { ok: false, error: "Tanggal belum diisi dengan benar." };
 
-  const keterangan = str(fd, "keterangan");
+  // Kotak teks beberapa baris: browser mengirim baris baru sebagai \r\n.
+  // Disimpan seragam sebagai \n, tanpa spasi di ujung tiap baris dan tanpa
+  // baris kosong berlebih.
+  const keterangan = str(fd, "keterangan")
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((l) => l.trimEnd())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n");
   if (keterangan.length < 3)
     return { ok: false, error: "Keterangan minimal 3 karakter — ini yang dibaca finance." };
 

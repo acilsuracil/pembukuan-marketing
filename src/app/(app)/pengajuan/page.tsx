@@ -9,6 +9,7 @@ import {
   daysBetween,
   fmtDate,
   fmtIdr,
+  judulKeterangan,
   todayISO,
 } from "@/lib/format";
 import { hasPerm } from "@/lib/policy";
@@ -139,7 +140,7 @@ export default async function PengajuanListPage({
                   </td>
                   <td className="px-3 py-2.5">
                     <Link href={`/pengajuan/${r.id}`} className="hover:underline">
-                      {r.keterangan}
+                      {judulKeterangan(r.keterangan)}
                     </Link>
                     {(r.brand_count > 0 ? r.brand_ringkas : r.brand_name) && (
                       <span className="mt-0.5 block text-xs text-[var(--text-muted)]">

@@ -23,6 +23,23 @@ export function fmtIdr(v: number | null | undefined): string {
   return n < 0 ? `−Rp ${idrFmt.format(-n)}` : `Rp ${idrFmt.format(n)}`;
 }
 
+/**
+ * Baris "Keterangan" di format untuk finance. Keterangan satu baris tetap di
+ * samping labelnya; yang beberapa baris (mis. daftar domain yang dibeli) turun
+ * ke bawah, sama seperti daftar brand.
+ */
+export function keteranganFinance(k: string): string {
+  const baris = k.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (baris.length <= 1) return `Keterangan : ${baris[0] ?? "—"}`;
+  return ["Keterangan :", ...baris].join("\n");
+}
+
+/** Baris pertama keterangan — untuk judul dan daftar yang hanya muat satu baris. */
+export function judulKeterangan(k: string): string {
+  const baris = k.split("\n").map((l) => l.trim()).filter(Boolean);
+  return baris.length > 1 ? `${baris[0]} …` : (baris[0] ?? "");
+}
+
 /** Kolom `links` pengajuan (satu per baris) jadi daftar. */
 export function pisahLink(links: string | null | undefined): string[] {
   return (links ?? "").split("\n").map((l) => l.trim()).filter(Boolean);

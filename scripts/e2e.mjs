@@ -737,6 +737,29 @@ step("Link profil di pengajuan");
   checkIncludes("format finance memuat link", detail.body, "Link :");
 }
 
+step("Keterangan beberapa baris (mis. daftar domain)");
+{
+  const seo = one(`SELECT id FROM divisi WHERE name='Endorse'`).id;
+  await submit("/pengajuan/baru", 'name="keterangan"', {
+    tanggal: "2026-08-22",
+    keterangan: "Pembelian domain\nDomain a\ndomain b\n\ndomain C",
+    nominal: "400.000",
+    tujuan: "langsung",
+    penerima_no_rek: "0987654321",
+    penerima_nama: "Dewi Endorser",
+    penerima_bank: "BCA",
+    platform_id: "",
+    divisi_id: seo,
+    brand_id: "",
+    catatan: "",
+  });
+  const pg = one(`SELECT * FROM pengajuan ORDER BY id DESC LIMIT 1`);
+  check("baris-barisnya tersimpan utuh", pg.keterangan, "Pembelian domain\nDomain a\ndomain b\n\ndomain C");
+  const detail = (await get(`/pengajuan/${pg.id}`)).body;
+  checkIncludes("format finance menurunkan tiap baris", detail, "Keterangan :\nPembelian domain\nDomain a\ndomain b\ndomain C");
+  checkIncludes("judul halaman cukup baris pertama", detail, "Pembelian domain …");
+}
+
 step("Tabel pengeluaran: total di kaki tabel dan pembagian halaman");
 {
   const n = one(`SELECT COUNT(*) AS n FROM v_transaksi`).n;

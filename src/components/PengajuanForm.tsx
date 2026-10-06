@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { savePengajuan, type ActionState } from "@/app/actions";
-import { brandFinance, fmtIdr, linkFinance, pisahLink, todayISO } from "@/lib/format";
+import { brandFinance, fmtIdr, keteranganFinance, linkFinance, pisahLink, todayISO } from "@/lib/format";
 import { parseRupiah } from "@/lib/num";
 import { bagiRata } from "@/lib/split";
 import type { PengajuanBrand, PengajuanRow, Tujuan } from "@/lib/types";
@@ -24,6 +24,16 @@ export interface Opt {
   /** Rincian rekening penerima — untuk mengisi otomatis kolom manualnya. */
   bank?: string;
   noRek?: string;
+}
+
+/**
+ * Kotak teks yang memanjang ke bawah mengikuti isinya. `field-sizing: content`
+ * belum didukung Safari — termasuk Mini App Telegram di iPhone — jadi tingginya
+ * dihitung manual dari scrollHeight.
+ */
+function tinggiIkutIsi(el: HTMLTextAreaElement) {
+  el.style.height = "auto";
+  el.style.height = `${el.scrollHeight + 2}px`;
 }
 
 /** Nomor rekening tanpa pemisah, supaya "123 456" dan "123456" dianggap sama. */
@@ -216,7 +226,7 @@ export default function PengajuanForm({
     );
 
     return [
-      `Keterangan : ${keterangan || "—"}`,
+      keteranganFinance(keterangan),
       `Nominal : ${nominal === null ? "—" : fmtIdr(nominal)}`,
       `Rekening : ${rek || "—"}`,
       barisBrand,
@@ -271,18 +281,28 @@ export default function PengajuanForm({
           <label className="label" htmlFor="p-keterangan">
             Keterangan
           </label>
-          <input
+          <textarea
             id="p-keterangan"
             name="keterangan"
-            type="text"
             required
             minLength={3}
-            className="field"
+            rows={1}
+            className="field resize-none overflow-hidden"
             placeholder="mis. Top-up iklan Meta PN138 minggu 3"
             value={keterangan}
-            onChange={(e) => setKeterangan(e.target.value)}
+            onChange={(e) => {
+              setKeterangan(e.target.value);
+              tinggiIkutIsi(e.currentTarget);
+            }}
+            ref={(el) => {
+              // Tinggi awal ikut isi, mis. saat mengubah pengajuan beberapa baris.
+              if (el) tinggiIkutIsi(el);
+            }}
           />
-          <p className="hint">Baris pertama yang dibaca finance.</p>
+          <p className="hint">
+            Baris pertama yang dibaca finance. Shift + Enter untuk baris baru,
+            mis. daftar domain yang dibeli.
+          </p>
         </div>
 
         <fieldset>

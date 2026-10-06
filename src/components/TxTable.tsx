@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { fmtDate, fmtIdr, JENIS_LABEL, SUMBER_LABEL } from "@/lib/format";
+import { fmtDate, fmtIdr, JENIS_LABEL, judulKeterangan, SUMBER_LABEL } from "@/lib/format";
 import { seriesVar } from "@/lib/palette";
 import type { TxRow } from "@/lib/types";
 import DeleteTxButton from "./DeleteTxButton";
@@ -74,7 +74,7 @@ export default function TxTable({
                 <Badge tone={TONE[t.jenis] ?? "muted"}>{JENIS_LABEL[t.jenis]}</Badge>
                 {t.keterangan && (
                   <span className="mt-0.5 block max-w-[220px] truncate text-xs text-[var(--text-muted)]">
-                    {t.keterangan}
+                    {judulKeterangan(t.keterangan)}
                   </span>
                 )}
               </td>

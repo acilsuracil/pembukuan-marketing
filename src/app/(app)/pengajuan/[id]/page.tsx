@@ -11,6 +11,7 @@ import {
   fmtDateTime,
   fmtIdr,
   JENIS_LABEL,
+  judulKeterangan,
   pisahLink,
   todayISO,
 } from "@/lib/format";
@@ -67,7 +68,7 @@ export default async function PengajuanDetailPage({
       <div className="page-header flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-xl font-semibold tracking-tight">
-            {g.keterangan}
+            {judulKeterangan(g.keterangan)}
             <StatusBadge status={g.status} leaderOk={Boolean(g.leader_at)} />
           </h1>
           <p className="mt-0.5 text-sm text-[var(--text-muted)]">

@@ -1,5 +1,5 @@
 import { all, getSetting, one, run, tx as inTransaction } from "./db";
-import { brandFinance, fmtDate, fmtIdr, linkFinance, pisahLink } from "./format";
+import { brandFinance, fmtDate, fmtIdr, keteranganFinance, linkFinance, pisahLink } from "./format";
 import { rekLine } from "./opts";
 import { hasPerm, logActivity, type Principal } from "./policy";
 import { attachmentsOf, brandPengajuan, getDivisi, getPengajuan, listTransaksi } from "./queries";
@@ -271,7 +271,7 @@ export function teksFinance(g: PengajuanRow): string {
         ? rekLine(g.penerima_bank ?? "", g.penerima_no_rek ?? "", g.penerima_nama)
         : "—";
   return [
-    `Keterangan : ${g.keterangan}`,
+    keteranganFinance(g.keterangan),
     `Nominal : ${fmtIdr(g.nominal)}`,
     `Rekening : ${rek}`,
     brandFinance(
