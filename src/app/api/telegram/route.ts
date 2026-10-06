@@ -7,7 +7,7 @@ import {
   bisaBayar,
   bisaLeader,
   bisaSetujuiBayar,
-  kirimBuktiKeGrup,
+  kirimTertunda,
   penggunaTelegram,
   putuskan,
   sinkronTelegram,
@@ -49,6 +49,7 @@ interface TgMessage {
   caption?: string;
   photo?: Array<{ file_id: string; file_size?: number; width: number }>;
   document?: { file_id: string; mime_type?: string; file_name?: string };
+  reply_to_message?: { message_id: number };
 }
 interface TgCallback {
   id: string;
@@ -69,12 +70,13 @@ interface Tunggu {
   tahap: "leader" | "bayar" | null;
   data: string;
   kedaluwarsa: string;
+  /** Grup tempat percakapan berlangsung, dan pesan bot yang harus dibalas. */
+  chat_id: number;
+  prompt_id: number;
 }
 interface DataBukti {
   foto: Array<{ id: string; mime: string; nama: string }>;
   link: string[];
-  /** Pesan bot berisi tombol Selesai/Batal, diperbarui tiap ada kiriman. */
-  pesan?: number;
 }
 
 const BATAS_MENIT = 30;
@@ -150,42 +152,67 @@ async function tombol(cb: TgCallback) {
           : bisaSetujuiBayar(user, g);
       if (tidak) return jawabTombol(cb.id, tidak, true);
 
+      // Alasan ditulis sebagai balasan di grup yang sama — tanpa pindah chat.
+      const chat = cb.message?.chat.id;
+      if (!chat) return jawabTombol(cb.id);
       const m = await kirimPesan(
-        cb.from.id,
-        `❌ Menolak <b>pengajuan #${id}</b> — ${esc(g.keterangan)} (${fmtIdr(g.nominal)}).\n\n` +
-          `Balas pesan ini dengan <b>alasan penolakannya</b>. Ketik /batal untuk membatalkan.`,
+        chat,
+        `❌ ${sebut(cb.from)} menolak <b>pengajuan #${id}</b>.\n` +
+          `<b>Balas (reply) pesan ini</b> dengan alasan penolakannya.`,
+        [[{ text: "Batal", callback_data: `TX:${id}` }]],
+        balasKe(cb.message?.message_id),
       );
-      if (!m) return jawabTombol(cb.id, mintaStart(), true);
-      bukaTunggu(cb.from.id, "alasan", id, tahap, {});
-      return jawabTombol(cb.id, "Tulis alasannya di chat pribadi dengan bot.");
+      if (!m) return jawabTombol(cb.id, "Bot gagal mengirim pesan ke grup ini.", true);
+      bukaTunggu(cb.from.id, "alasan", id, tahap, {}, chat, m.message_id);
+      return jawabTombol(cb.id, "Balas pesan bot di grup dengan alasannya.");
     }
 
     case "P": {
-      if (!bisaBayar(user))
-        return jawabTombol(cb.id, "Hanya finance (izin Tandai dana cair) yang bisa membayar.", true);
+      const tidak = bisaBayar(user, g);
+      if (tidak) return jawabTombol(cb.id, tidak, true);
       if (tahapOf(g) !== "siap")
         return jawabTombol(cb.id, "Pengajuan ini tidak sedang menunggu dibayar.", true);
-      const m = await kirimPesan(cb.from.id, teksBukti(id, { foto: [], link: [] }), tombolBukti(id));
-      if (!m) return jawabTombol(cb.id, mintaStart(), true);
-      bukaTunggu(cb.from.id, "bukti", id, null, { foto: [], link: [], pesan: m.message_id });
-      return jawabTombol(cb.id, "Kirim bukti bayarnya di chat pribadi dengan bot.");
+      const chat = cb.message?.chat.id;
+      if (!chat) return jawabTombol(cb.id);
+      const m = await kirimPesan(
+        chat,
+        teksBukti(id, sebut(cb.from), { foto: [], link: [] }),
+        tombolBukti(id),
+        balasKe(cb.message?.message_id),
+      );
+      if (!m) return jawabTombol(cb.id, "Bot gagal mengirim pesan ke grup ini.", true);
+      bukaTunggu(cb.from.id, "bukti", id, null, { foto: [], link: [] }, chat, m.message_id);
+      return jawabTombol(cb.id, "Balas pesan bot di grup dengan foto/link bukti, lalu tekan Selesai.");
     }
 
     case "PS":
       return selesaiBayar(cb, user, id);
 
-    case "PX": {
+    case "PX":
+    case "TX": {
+      // Hanya pemilik percakapan yang bisa membatalkannya.
+      const t = tungguOf(cb.from.id);
+      if (!t || t.prompt_id !== cb.message?.message_id)
+        return jawabTombol(cb.id, "Ini bukan percakapan Anda.", true);
       tutupTunggu(cb.from.id);
-      if (cb.message) await ubahPesan(cb.message.chat.id, cb.message.message_id, `Pembayaran pengajuan #${id} dibatalkan. Tidak ada yang tercatat.`);
+      await ubahPesan(
+        t.chat_id,
+        t.prompt_id,
+        aksi === "PX"
+          ? `Pembayaran pengajuan #${id} dibatalkan. Tidak ada yang tercatat.`
+          : `Penolakan pengajuan #${id} dibatalkan.`,
+      );
       return jawabTombol(cb.id, "Dibatalkan.");
     }
   }
   return jawabTombol(cb.id);
 }
 
-function mintaStart(): string {
-  return "Bot belum bisa mengirim pesan pribadi ke Anda. Buka chat dengan bot ini, tekan Start, lalu tekan tombolnya lagi.";
-}
+/** Menyebut seseorang dengan namanya di pesan grup. */
+const sebut = (u: TgUser) => `<a href="tg://user?id=${u.id}">${esc(u.first_name || u.username || "Anda")}</a>`;
+
+const balasKe = (messageId?: number) =>
+  messageId ? { reply_parameters: { message_id: messageId, allow_sending_without_reply: true } } : {};
 
 async function pilihGrupDivisi(cb: TgCallback, user: Pelaku, divisiId: number) {
   if (user.role !== "owner") return jawabTombol(cb.id, "Hanya owner yang bisa mengatur grup.", true);
@@ -196,7 +223,9 @@ async function pilihGrupDivisi(cb: TgCallback, user: Pelaku, divisiId: number) {
   logActivity(user, "grup-divisi", `${d?.name} → Telegram ${chat.id}`);
   revalidatePath("/", "layout");
   await ubahPesan(chat.id, cb.message!.message_id, `✅ Grup ini sekarang grup divisi <b>${esc(d?.name ?? "")}</b>. Pengajuan divisi ini akan diposting di sini.`);
-  return jawabTombol(cb.id, "Tersimpan.");
+  await jawabTombol(cb.id, "Tersimpan.");
+  // Pengajuan yang dibuat sebelum grup ini dipasang menyusul dikirim.
+  await kirimTertunda(divisiId);
 }
 
 /* =================================================================== pesan */
@@ -236,7 +265,15 @@ async function pesan(m: TgMessage) {
     );
   }
 
-  if (m.chat.type !== "private" || !from) return;
+  if (!from) return;
+
+  // Balasan ke pesan "balas pesan ini" milik bot: alasan penolakan atau bukti
+  // bayar. Bot di grup memang hanya menerima balasan untuk pesannya sendiri.
+  const t = tungguOf(from.id);
+  if (t && m.chat.id === t.chat_id && m.reply_to_message?.message_id === t.prompt_id)
+    return t.jenis === "alasan" ? terimaAlasan(m, t, teks) : terimaBukti(m, t, teks);
+
+  if (m.chat.type !== "private") return;
 
   // /start ajukan_<divisi> — datang dari tombol /ajukan di grup divisi.
   const dariGrup = /^\/start\s+ajukan(?:_(\d+))?$/.exec(teks);
@@ -247,73 +284,71 @@ async function pesan(m: TgMessage) {
       m.chat.id,
       `Halo! Bot ini mengirim pengajuan dana untuk disetujui.\nID Telegram Anda: <code>${from.id}</code> — berikan ke owner supaya didaftarkan di aplikasi.`,
     );
+}
 
-  const t = tungguOf(from.id);
-  if (!t) return;
-  if (perintah === "/batal") {
-    tutupTunggu(from.id);
-    return kirimPesan(m.chat.id, "Dibatalkan.");
-  }
-
-  const user = penggunaTelegram(from.id);
-  if (!user) return tutupTunggu(from.id);
-
-  if (t.jenis === "alasan") {
-    if (!teks || perintah) return kirimPesan(m.chat.id, "Tulis alasannya sebagai teks biasa, atau /batal.");
-    const h = putuskan({
-      pengajuanId: t.pengajuan_id,
-      user,
-      tahap: t.tahap ?? "leader",
-      setuju: false,
-      alasan: teks,
-      lewat: "telegram",
-    });
-    if (!h.ok) {
-      // Alasan terlalu pendek boleh diulang; galat lain menutup percakapannya.
-      if (!h.error.startsWith("Tulis alasan")) tutupTunggu(from.id);
-      return kirimPesan(m.chat.id, `⚠️ ${esc(h.error)}`);
+async function terimaAlasan(m: TgMessage, t: Tunggu, teks: string) {
+  const user = penggunaTelegram(m.from!.id);
+  if (!user) return tutupTunggu(m.from!.id);
+  if (!teks) return kirimPesan(m.chat.id, "Tulis alasannya sebagai teks.", [], balasKe(m.message_id));
+  const h = putuskan({
+    pengajuanId: t.pengajuan_id,
+    user,
+    tahap: t.tahap ?? "leader",
+    setuju: false,
+    alasan: teks,
+    lewat: "telegram",
+  });
+  if (!h.ok) {
+    // Alasan terlalu pendek boleh diulang; galat lain menutup percakapannya.
+    if (!h.error.startsWith("Tulis alasan")) {
+      tutupTunggu(m.from!.id);
+      await ubahPesan(t.chat_id, t.prompt_id, `⚠️ ${esc(h.error)}`);
     }
-    tutupTunggu(from.id);
-    revalidatePath("/", "layout");
-    await sinkronTelegram(t.pengajuan_id);
-    return kirimPesan(m.chat.id, `❌ Pengajuan #${t.pengajuan_id} ditolak. Alasannya sudah tercatat dan terlihat di grup.`);
+    return kirimPesan(m.chat.id, `⚠️ ${esc(h.error)}`, [], balasKe(m.message_id));
   }
+  tutupTunggu(m.from!.id);
+  await ubahPesan(t.chat_id, t.prompt_id, `❌ Pengajuan #${t.pengajuan_id} ditolak. Alasannya tercatat.`);
+  revalidatePath("/", "layout");
+  await sinkronTelegram(t.pengajuan_id);
+}
 
-  // Mengumpulkan bukti bayar: foto, gambar sebagai berkas, dan/atau link.
-  const data = JSON.parse(t.data) as DataBukti;
-  let masuk = 0;
+/** Foto, gambar sebagai berkas, dan/atau link — dicatat satu per satu secara atomik. */
+async function terimaBukti(m: TgMessage, t: Tunggu, teks: string) {
+  const masuk: Array<["foto", DataBukti["foto"][number]] | ["link", string]> = [];
   const foto = m.photo?.at(-1); // ukuran terbesar ada di akhir
-  if (foto) {
-    data.foto.push({ id: foto.file_id, mime: "image/jpeg", nama: `bukti-${data.foto.length + 1}.jpg` });
-    masuk++;
-  } else if (m.document) {
+  if (foto) masuk.push(["foto", { id: foto.file_id, mime: "image/jpeg", nama: `bukti-${m.message_id}.jpg` }]);
+  else if (m.document) {
     const mime = m.document.mime_type ?? "";
     if (!EXT_BY_MIME[mime])
-      return kirimPesan(m.chat.id, "⚠️ Berkas itu bukan gambar (JPG/PNG/WEBP/GIF). Kirim sebagai foto atau link.");
-    data.foto.push({ id: m.document.file_id, mime, nama: m.document.file_name ?? `bukti-${data.foto.length + 1}` });
-    masuk++;
+      return kirimPesan(m.chat.id, "⚠️ Berkas itu bukan gambar (JPG/PNG/WEBP/GIF). Kirim sebagai foto atau link.", [], balasKe(m.message_id));
+    masuk.push(["foto", { id: m.document.file_id, mime, nama: m.document.file_name ?? `bukti-${m.message_id}` }]);
   }
   for (const kata of `${teks} ${m.caption ?? ""}`.split(/\s+/)) {
     if (!/^(https?:\/\/|www\.)/i.test(kata)) continue;
     const l = normalLink(kata);
-    if (l && !data.link.includes(l)) {
-      data.link.push(l);
-      masuk++;
-    }
+    if (l) masuk.push(["link", l]);
   }
-  if (masuk === 0)
-    return kirimPesan(m.chat.id, "Kirim foto bukti atau link-nya, lalu tekan ✅ Selesai. Ketik /batal untuk membatalkan.");
-  if (data.foto.length > MAX_BUKTI_PER_TX) {
-    data.foto = data.foto.slice(0, MAX_BUKTI_PER_TX);
-    await kirimPesan(m.chat.id, `⚠️ Maksimal ${MAX_BUKTI_PER_TX} foto. Sisanya diabaikan.`);
-  }
+  if (masuk.length === 0) return;
 
-  // Pesan Selesai/Batal dikirim ulang di paling bawah, supaya tombolnya tidak
-  // tenggelam di atas foto-foto yang baru masuk.
-  const baru = await kirimPesan(m.chat.id, teksBukti(t.pengajuan_id, data), tombolBukti(t.pengajuan_id));
-  if (baru && data.pesan) await ubahPesan(m.chat.id, data.pesan, "⬇️ lanjut di bawah");
-  if (baru) data.pesan = baru.message_id;
-  run(`UPDATE telegram_tunggu SET data = ? WHERE telegram_id = ?`, JSON.stringify(data), from.id);
+  // Foto-foto satu album datang sebagai pembaruan terpisah yang bisa diproses
+  // bersamaan; json_insert dalam satu UPDATE memastikan tidak ada yang tertimpa.
+  for (const [jenis, isi] of masuk)
+    run(
+      jenis === "foto"
+        ? `UPDATE telegram_tunggu SET data = json_insert(data, '$.foto[#]', json(?)) WHERE telegram_id = ?`
+        : `UPDATE telegram_tunggu SET data = json_insert(data, '$.link[#]', ?) WHERE telegram_id = ?`,
+      jenis === "foto" ? JSON.stringify(isi) : isi,
+      t.telegram_id,
+    );
+
+  const terbaru = tungguOf(t.telegram_id);
+  if (!terbaru) return;
+  await ubahPesan(
+    t.chat_id,
+    t.prompt_id,
+    teksBukti(t.pengajuan_id, sebut(m.from!), JSON.parse(terbaru.data) as DataBukti),
+    tombolBukti(t.pengajuan_id),
+  );
 }
 
 /* ================================================================ mini app */
@@ -349,16 +384,17 @@ async function tombolAjukan(m: TgMessage) {
 
 /* ============================================================ bukti bayar */
 
-function teksBukti(id: number, d: DataBukti): string {
+function teksBukti(id: number, siapa: string, d: DataBukti): string {
   const g = getPengajuan(id);
   const ke = g
     ? `${fmtIdr(g.nominal)} — ${esc(g.penerima_nama ? `${g.penerima_bank ?? ""} ${g.penerima_no_rek ?? ""} (${g.penerima_nama})` : (g.dompet_name ?? ""))}`
     : "";
+  const link = [...new Set(d.link)];
   return (
-    `💸 <b>Bukti bayar pengajuan #${id}</b>\n${ke}\n\n` +
-    `Kirim di sini: <b>foto bukti</b> (boleh beberapa) dan/atau <b>link</b>.\n` +
-    `Nominal dicatat penuh, tanggal hari ini — kalau beda, bayar lewat aplikasi.\n\n` +
-    `Terkumpul: ${d.foto.length} foto, ${d.link.length} link`
+    `💸 ${siapa} membayar <b>pengajuan #${id}</b>\n${ke}\n\n` +
+    `<b>Balas (reply) pesan ini</b> dengan foto bukti (boleh beberapa sekaligus) dan/atau link, lalu tekan Selesai.\n` +
+    `<i>Nominal dicatat penuh, tanggal hari ini — kalau beda, bayar lewat aplikasi.</i>\n\n` +
+    `Terkumpul: ${d.foto.length} foto, ${link.length} link`
   );
 }
 
@@ -371,9 +407,12 @@ const tombolBukti = (id: number) => [
 
 async function selesaiBayar(cb: TgCallback, user: Pelaku, id: number) {
   const t = tungguOf(cb.from.id);
-  if (!t || t.jenis !== "bukti" || t.pengajuan_id !== id)
-    return jawabTombol(cb.id, "Sesi bukti ini sudah berakhir. Tekan 💸 Bayar lagi di grup.", true);
+  if (!t || t.jenis !== "bukti" || t.pengajuan_id !== id || t.prompt_id !== cb.message?.message_id)
+    return jawabTombol(cb.id, "Ini bukan percakapan bayar Anda, atau sudah berakhir.", true);
   const data = JSON.parse(t.data) as DataBukti;
+  data.link = [...new Set(data.link)];
+  if (data.foto.length > MAX_BUKTI_PER_TX)
+    return jawabTombol(cb.id, `Maksimal ${MAX_BUKTI_PER_TX} foto. Batalkan lalu ulangi dengan lebih sedikit foto.`, true);
   if (data.foto.length === 0 && data.link.length === 0)
     return jawabTombol(cb.id, "Belum ada bukti. Kirim foto atau link dulu.", true);
 
@@ -388,26 +427,35 @@ async function selesaiBayar(cb: TgCallback, user: Pelaku, id: number) {
     if (b) files.push(new File([new Uint8Array(b.data)], f.nama, { type: f.mime }));
   }
   if (data.foto.length > 0 && files.length === 0 && data.link.length === 0)
-    return kirimPesan(cb.from.id, "⚠️ Foto bukti gagal diunduh dari Telegram. Kirim ulang fotonya lalu tekan Selesai.");
+    return kirimPesan(t.chat_id, "⚠️ Foto bukti gagal diunduh dari Telegram. Kirim ulang fotonya lalu tekan Selesai.", [], balasKe(t.prompt_id));
 
   const h = await catatPembayaran(g, user, { files, links: data.link });
-  if (!h.ok) return kirimPesan(cb.from.id, `⚠️ ${esc(h.error)}`);
+  if (!h.ok) return kirimPesan(t.chat_id, `⚠️ ${esc(h.error)}`, [], balasKe(t.prompt_id));
 
   tutupTunggu(cb.from.id);
   revalidatePath("/", "layout");
-  if (cb.message) await ubahPesan(cb.message.chat.id, cb.message.message_id, `✅ ${esc(h.message)}`);
+  // Foto buktinya sudah terlihat di grup sebagai balasan — tidak perlu dikirim ulang.
+  await ubahPesan(t.chat_id, t.prompt_id, `✅ ${esc(h.message)}`);
   await sinkronTelegram(id);
-  await kirimBuktiKeGrup(id);
 }
 
 /* ========================================================= tunggu balasan */
 
-function bukaTunggu(tgId: number, jenis: "alasan" | "bukti", pengajuanId: number, tahap: string | null, data: object) {
+function bukaTunggu(
+  tgId: number,
+  jenis: "alasan" | "bukti",
+  pengajuanId: number,
+  tahap: string | null,
+  data: object,
+  chatId: number,
+  promptId: number,
+) {
   run(
-    `INSERT OR REPLACE INTO telegram_tunggu (telegram_id, jenis, pengajuan_id, tahap, data, kedaluwarsa)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT OR REPLACE INTO telegram_tunggu
+       (telegram_id, jenis, pengajuan_id, tahap, data, kedaluwarsa, chat_id, prompt_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     tgId, jenis, pengajuanId, tahap, JSON.stringify(data),
-    new Date(Date.now() + BATAS_MENIT * 60_000).toISOString(),
+    new Date(Date.now() + BATAS_MENIT * 60_000).toISOString(), chatId, promptId,
   );
 }
 

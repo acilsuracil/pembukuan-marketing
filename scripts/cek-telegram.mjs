@@ -59,7 +59,8 @@ const fake = http.createServer((req, res) => {
       // multipart (album bukti): cukup catat chat_id-nya
       body = { multipart: true, chat_id: Number(/name="chat_id"\r\n\r\n(-?\d+)/.exec(raw)?.[1]) };
     }
-    calls.push({ method, body });
+    const call = { method, body };
+    calls.push(call);
     const result =
       method === "getMe"
         ? { username: "botuji" }
@@ -70,6 +71,7 @@ const fake = http.createServer((req, res) => {
           : method === "sendMediaGroup"
             ? [{ message_id: nextMsg++ }]
             : true;
+    call.result = result;
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ ok: true, result }));
   });
@@ -118,6 +120,19 @@ const kirim = (dari, isi) =>
   webhook({
     message: { message_id: updateId, chat: { id: dari, type: "private" }, from: { id: dari }, ...isi },
   });
+/** Membalas (reply) sebuah pesan bot di grup. */
+const balas = (dari, chat, keMessageId, isi) =>
+  webhook({
+    message: {
+      message_id: 1000 + updateId,
+      chat: { id: chat, type: "supergroup" },
+      from: { id: dari, first_name: "Uji" },
+      reply_to_message: { message_id: keMessageId },
+      ...isi,
+    },
+  });
+/** message_id pesan "balas pesan ini" terakhir yang dikirim bot ke sebuah grup. */
+const promptDi = (chat) => panggilan("sendMessage").filter((c) => c.body.chat_id === chat).at(-1)?.result.message_id;
 
 const panggilan = (method) => calls.filter((c) => c.method === method);
 const alertTerakhir = () => panggilan("answerCallbackQuery").at(-1)?.body;
@@ -233,24 +248,41 @@ check("status jadi siap dibayar", one(`SELECT status FROM pengajuan WHERE id=?`,
   check("tombol berganti jadi 💸 Bayar", edit?.body.reply_markup.inline_keyboard[0][0].callback_data, `P:${g1.id}`);
 }
 
-step("Finance membayar: bukti foto + link lewat chat pribadi");
+step("Finance membayar: bukti foto + link dengan membalas pesan bot di grup");
 calls = [];
 await tekan(TG.sari, `P:${g1.id}`);
 check("yang bukan finance ditolak", alertTerakhir()?.text.startsWith("Hanya finance"), true);
 await tekan(TG.berto, `P:${g1.id}`);
-check("bot meminta bukti di chat pribadi", panggilan("sendMessage").some((c) => c.body.chat_id === TG.berto), true);
+const promptBayar = promptDi(GRUP_BAYAR);
+check("bot meminta bukti di grup pembayaran", Boolean(promptBayar), true);
+check("tidak ada pesan pribadi", panggilan("sendMessage").some((c) => c.body.chat_id === TG.berto), false);
 
-await kirim(TG.berto, { photo: [{ file_id: "kecil", width: 90 }, { file_id: "FOTO1", width: 1280 }] });
-await kirim(TG.berto, { photo: [{ file_id: "FOTO2", width: 1280 }] });
-await kirim(TG.berto, { text: "ini linknya https://drive.google.com/bukti-1" });
+// Album dua foto datang sebagai dua pembaruan yang diproses bersamaan.
+await Promise.all([
+  balas(TG.berto, GRUP_BAYAR, promptBayar, { photo: [{ file_id: "kecil", width: 90 }, { file_id: "FOTO1", width: 1280 }] }),
+  balas(TG.berto, GRUP_BAYAR, promptBayar, { photo: [{ file_id: "FOTO2", width: 1280 }] }),
+]);
+await balas(TG.berto, GRUP_BAYAR, promptBayar, { text: "ini linknya https://drive.google.com/bukti-1" });
+await balas(TG.sari, GRUP_BAYAR, promptBayar, { photo: [{ file_id: "FOTO-ORANG-LAIN", width: 1280 }] });
+await webhook({
+  message: { message_id: 5555, chat: { id: GRUP_BAYAR, type: "supergroup" }, from: { id: TG.berto }, photo: [{ file_id: "BUKAN-BALASAN", width: 1280 }] },
+});
 {
   const t = JSON.parse(one(`SELECT data FROM telegram_tunggu WHERE telegram_id=?`, TG.berto).data);
-  check("dua foto (ukuran terbesar) terkumpul", t.foto.map((f) => f.id).join(","), "FOTO1,FOTO2");
+  check("dua foto album terkumpul (tidak ada yang tertimpa)", t.foto.map((f) => f.id).sort().join(","), "FOTO1,FOTO2");
   check("link terkumpul", t.link.join(","), "https://drive.google.com/bukti-1");
+  check(
+    "pesan bot diperbarui dengan hitungannya",
+    panggilan("editMessageText").some((c) => c.body.message_id === promptBayar && c.body.text.includes("2 foto, 1 link")),
+    true,
+  );
 }
 
+await tekan(TG.sari, `PS:${g1.id}`, GRUP_BAYAR, promptBayar);
+check("orang lain tidak bisa menekan Selesai", alertTerakhir()?.text.startsWith("Ini bukan percakapan"), true);
+
 calls = [];
-await tekan(TG.berto, `PS:${g1.id}`, TG.berto);
+await tekan(TG.berto, `PS:${g1.id}`, GRUP_BAYAR, promptBayar);
 {
   const g = one(`SELECT * FROM pengajuan WHERE id=?`, g1.id);
   check("status jadi dibayar", g.status, "dibayar");
@@ -259,27 +291,33 @@ await tekan(TG.berto, `PS:${g1.id}`, TG.berto);
   check("baris pengeluaran lahir", tx?.jenis, "belanja");
   check("nominal penuh", tx?.nominal, 2000000);
   check("dua foto tersimpan di aplikasi", one(`SELECT COUNT(*) AS n FROM attachments WHERE tx_id=?`, tx.id).n, 2);
-  const album = calls.find((c) => (c.method === "sendMediaGroup" || c.method === "sendPhoto") && c.body.chat_id === GRUP_BAYAR);
-  check("album bukti dikirim ke grup pembayaran", Boolean(album), true);
+  check(
+    "foto tidak dikirim ulang ke grup (sudah ada sebagai balasan)",
+    calls.some((c) => c.method === "sendMediaGroup" || c.method === "sendPhoto"),
+    false,
+  );
   check("sesi bukti ditutup", one(`SELECT COUNT(*) AS n FROM telegram_tunggu WHERE telegram_id=?`, TG.berto).n, 0);
 }
 
-step("Leader menolak: bot meminta alasan di chat pribadi");
+step("Leader menolak: alasan dibalas langsung di grup divisi");
 {
   await login("berto");
   const g2 = await ajukan("Endorse yang akan ditolak");
   calls = [];
   await tekan(TG.rina, `L0:${g2.id}`, GRUP_DIVISI);
-  check("bot meminta alasan ke leader", panggilan("sendMessage").some((c) => c.body.chat_id === TG.rina), true);
+  const promptTolak = promptDi(GRUP_DIVISI);
+  check("bot meminta alasan di grup divisi", Boolean(promptTolak), true);
   check("belum ditolak sebelum ada alasan", one(`SELECT status FROM pengajuan WHERE id=?`, g2.id).status, "diajukan");
-  await kirim(TG.rina, { text: "ok" });
+  await balas(TG.sari, GRUP_DIVISI, promptTolak, { text: "alasan dari orang lain" });
+  check("balasan orang lain diabaikan", one(`SELECT status FROM pengajuan WHERE id=?`, g2.id).status, "diajukan");
+  await balas(TG.rina, GRUP_DIVISI, promptTolak, { text: "ok" });
   check("alasan terlalu pendek ditolak", one(`SELECT status FROM pengajuan WHERE id=?`, g2.id).status, "diajukan");
-  await kirim(TG.rina, { text: "nominal kebesaran" });
+  await balas(TG.rina, GRUP_DIVISI, promptTolak, { text: "nominal kebesaran" });
   const g = one(`SELECT status, alasan_tolak FROM pengajuan WHERE id=?`, g2.id);
   check("status jadi ditolak", g.status, "ditolak");
   check("alasan tersimpan", g.alasan_tolak, "nominal kebesaran");
-  const edit = panggilan("editMessageText").find((c) => c.body.chat_id === GRUP_DIVISI);
-  check("grup divisi melihat alasannya", edit?.body.text.includes("nominal kebesaran"), true);
+  const edit = panggilan("editMessageText").find((c) => c.body.chat_id === GRUP_DIVISI && c.body.text.includes("nominal kebesaran"));
+  check("pesan pengajuan di grup divisi memuat alasannya", Boolean(edit), true);
   check("tidak pernah sampai ke grup pembayaran", panggilan("sendMessage").some((c) => c.body.chat_id === GRUP_BAYAR), false);
 }
 
@@ -290,6 +328,13 @@ step("Leader yang mengajukan sendiri langsung ke grup pembayaran");
   const g3 = await ajukan("Diajukan leader sendiri");
   check("tahap leader terlewati", Boolean(one(`SELECT leader_at FROM pengajuan WHERE id=?`, g3.id).leader_at), true);
   check("langsung diposting ke grup pembayaran", panggilan("sendMessage").some((c) => c.body.chat_id === GRUP_BAYAR), true);
+
+  // Owner menyetujui pembayaran, lalu mencoba membayarnya sendiri — kasus bug
+  // yang ditemukan di produksi: owner punya semua izin, termasuk Tandai dana cair.
+  await tekan(TG.berto, `B1:${g3.id}`);
+  check("owner menyetujui pembayaran", one(`SELECT status FROM pengajuan WHERE id=?`, g3.id).status, "disetujui");
+  await tekan(TG.berto, `P:${g3.id}`);
+  check("penyetuju tidak bisa sekaligus membayar", alertTerakhir()?.text.startsWith("Penyetuju pembayaran tidak bisa"), true);
 }
 
 step("Mini App: masuk dengan initData bertanda tangan, lalu mengajukan");

@@ -71,8 +71,20 @@ export function bisaSetujuiBayar(user: Pelaku, g: PengajuanRow): string | null {
   return null;
 }
 
-export function bisaBayar(user: Pelaku): boolean {
-  return hasPerm(user, "markPaid");
+/**
+ * Finance: punya izin Tandai dana cair, dan bukan orang yang menyetujui
+ * pembayaran pengajuan ini. Menyetujui dan mengeksekusi pembayaran yang sama
+ * adalah dua tugas yang sengaja dipisah — owner pun tidak dikecualikan.
+ */
+export function bisaBayar(user: Pelaku, g: Pick<PengajuanRow, "id">): string | null {
+  if (!hasPerm(user, "markPaid")) return "Hanya finance (izin Tandai dana cair) yang bisa membayar.";
+  const penyetuju = one(
+    `SELECT 1 FROM pengajuan_persetujuan
+     WHERE pengajuan_id = ? AND tahap = 'bayar' AND setuju = 1 AND user_id = ?`,
+    g.id, user.id,
+  );
+  if (penyetuju) return "Penyetuju pembayaran tidak bisa sekaligus membayar pengajuan yang ia setujui.";
+  return null;
 }
 
 /** Akun aplikasi milik sebuah akun Telegram, kalau sudah dipasangkan dan aktif. */
@@ -425,4 +437,29 @@ export async function tandaiDihapus(pengajuanId: number): Promise<void> {
     const p = pesanTersimpan(pengajuanId, jenis);
     if (p) await ubahPesan(p.chat_id, p.message_id, `🗑 Pengajuan #${pengajuanId} dihapus dari aplikasi.`);
   }
+}
+
+/**
+ * Mengirim pengajuan divisi ini yang masih menunggu leader tapi belum pernah
+ * diposting — terjadi kalau pengajuannya dibuat sebelum grup divisinya dipasang.
+ */
+export async function kirimTertunda(divisiId: number): Promise<number> {
+  const tertunda = all<{ id: number }>(
+    `SELECT p.id FROM pengajuan p
+     WHERE p.divisi_id = ? AND p.status = 'diajukan'
+       AND NOT EXISTS (SELECT 1 FROM telegram_pesan t
+                       WHERE t.pengajuan_id = p.id AND t.jenis = 'divisi')
+     ORDER BY p.id`,
+    divisiId,
+  );
+  for (const p of tertunda) await sinkronTelegram(p.id);
+  return tertunda.length;
+}
+
+/** Peringatan untuk pembuat pengajuan kalau divisinya belum tersambung ke Telegram. */
+export function peringatanGrup(divisiId: number | null): string {
+  if (!divisiId || !process.env.TELEGRAM_BOT_TOKEN) return "";
+  const d = getDivisi(divisiId);
+  if (!d || d.telegram_chat_id) return "";
+  return ` ⚠️ Divisi ${d.name} belum punya grup Telegram — pengajuan belum terkirim ke leader. Akan terkirim otomatis begitu grupnya dipasang di Master → Divisi.`;
 }

@@ -518,6 +518,10 @@ function migrate(db: DatabaseSync) {
       kedaluwarsa  TEXT    NOT NULL
     );
   `);
+  // Percakapan tunggu kini berlangsung di grup: balasan dicocokkan ke pesan
+  // "balas pesan ini" milik bot (prompt_id) di chat tersebut.
+  addColumn(db, "telegram_tunggu", "chat_id", "INTEGER");
+  addColumn(db, "telegram_tunggu", "prompt_id", "INTEGER");
 
   // Urutannya penting: indeks pada pasangan_id dibuat **setelah** tabelnya
   // dibangun ulang, karena pembukuan yang sudah berjalan belum punya kolomnya.

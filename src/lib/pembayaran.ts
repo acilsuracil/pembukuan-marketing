@@ -5,7 +5,7 @@ import {
   EXT_BY_MIME,
   MAX_BUKTI_PER_TX,
 } from "./bukti";
-import { run, tx as inTransaction } from "./db";
+import { one, run, tx as inTransaction } from "./db";
 import { fmtIdr, todayISO } from "./format";
 import { isLocked, lockError, logActivity, type Principal } from "./policy";
 import { attachmentsOf, brandPengajuan } from "./queries";
@@ -133,6 +133,17 @@ export async function catatPembayaran(
     return {
       ok: false,
       error: `Pengajuan ini sudah punya ${g.tx_count} baris buku besar. Periksa dulu di daftar transaksi.`,
+    };
+  if (
+    one(
+      `SELECT 1 FROM pengajuan_persetujuan
+       WHERE pengajuan_id = ? AND tahap = 'bayar' AND setuju = 1 AND user_id = ?`,
+      g.id, me.id,
+    )
+  )
+    return {
+      ok: false,
+      error: "Penyetuju pembayaran tidak bisa sekaligus membayar pengajuan yang ia setujui.",
     };
 
   const tanggalBayar = input.tanggal || todayISO();

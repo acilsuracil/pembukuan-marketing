@@ -8,6 +8,8 @@ import { fmtIdr, normalLink } from "@/lib/format";
 import { buktiRejection, catatPembayaran, saveBukti } from "@/lib/pembayaran";
 import {
   kirimBuktiKeGrup,
+  kirimTertunda,
+  peringatanGrup,
   putuskan,
   setelahDiajukan,
   sinkronTelegram,
@@ -186,9 +188,16 @@ export async function saveDivisi(
   }
 
   logActivity(me, idRead.id ? "ubah-divisi" : "tambah-divisi", name);
+  // Pengajuan yang dibuat sebelum grupnya dipasang menyusul dikirim sekarang.
+  const tertunda = idRead.id && grup.id ? await kirimTertunda(idRead.id) : 0;
   await touchSession(me);
   refresh();
-  return { ok: true, message: idRead.id ? "Divisi diperbarui." : "Divisi ditambahkan." };
+  return {
+    ok: true,
+    message:
+      (idRead.id ? "Divisi diperbarui." : "Divisi ditambahkan.") +
+      (tertunda ? ` ${tertunda} pengajuan yang tertunda dikirim ke grupnya.` : ""),
+  };
 }
 
 /**
@@ -886,7 +895,8 @@ export async function savePengajuan(
     ok: true,
     message:
       (editing ? "Pengajuan diperbarui." : "Pengajuan diajukan ke leader divisinya.") +
-      (v.porsi.length ? ` Dibagi ke ${v.porsi.length} brand.` : ""),
+      (v.porsi.length ? ` Dibagi ke ${v.porsi.length} brand.` : "") +
+      (editing ? "" : peringatanGrup(v.divisiId)),
   };
 }
 

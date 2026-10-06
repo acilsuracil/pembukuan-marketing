@@ -16,6 +16,7 @@ import {
 } from "@/lib/format";
 import { rekLine } from "@/lib/opts";
 import {
+  bisaBayar,
   bisaLeader,
   bisaSetujuiBayar,
   keputusanOf,
@@ -276,7 +277,7 @@ export default async function PengajuanDetailPage({
               dompetName={g.dompet_name}
               today={todayISO()}
               canEdit={canEdit}
-              canMarkPaid={hasPerm(me, "markPaid")}
+              canMarkPaid={bisaBayar(me, g) === null}
               tahap={tahap}
               canLeader={bisaLeader(me, g)}
               tolakBayar={bisaSetujuiBayar(me, g)}
