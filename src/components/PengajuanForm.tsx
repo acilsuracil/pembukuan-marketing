@@ -136,6 +136,18 @@ export default function PengajuanForm({
     (p) => p.brandId !== "" && (parseRupiah(p.nominal) ?? 0) > 0,
   ).length;
 
+  // Formulir Mini App terbuka = sesi berhasil; penanda pengaman putaran masuk
+  // (lihat MiniMasuk) dibuang supaya membuka ulang tidak dikira putaran.
+  useEffect(() => {
+    if (mini) sessionStorage.removeItem("mini-masuk");
+  }, [mini]);
+
+  // Pesan galat tampil di atas formulir, sementara tombol Ajukan ada di bawah —
+  // di layar HP orang tidak melihatnya dan mengira tombolnya tidak berfungsi.
+  useEffect(() => {
+    if (state.error) formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [state]);
+
   useEffect(() => {
     if (!state.ok) return;
     if (mini) {

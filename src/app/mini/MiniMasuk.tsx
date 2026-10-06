@@ -16,6 +16,23 @@ declare global {
 }
 
 /**
+ * Skrip telegram-web-app.js tidak menahan hidrasi React, jadi di jaringan cepat
+ * kode ini bisa berjalan lebih dulu dari skripnya. Ditunggu sebentar alih-alih
+ * langsung menyimpulkan halaman dibuka di luar Telegram.
+ */
+function tungguTelegram(batasMs = 5000): Promise<TgWebApp | undefined> {
+  return new Promise((selesai) => {
+    const mulai = Date.now();
+    const cek = () => {
+      const wa = window.Telegram?.WebApp;
+      if (wa?.initData || Date.now() - mulai > batasMs) return selesai(wa);
+      setTimeout(cek, 50);
+    };
+    cek();
+  });
+}
+
+/**
  * Layar pembuka Mini App: menukar initData Telegram dengan sesi, lalu pindah ke
  * formulir pengajuan. Divisi bawaan datang dari ?divisi= (tombol bot) atau
  * start_param (tautan t.me).
@@ -25,13 +42,25 @@ export default function MiniMasuk({ divisi }: { divisi: string }) {
   const [galat, setGalat] = useState<string | null>(null);
 
   useEffect(() => {
-    const wa = window.Telegram?.WebApp;
-    wa?.ready();
-    wa?.expand();
-    Promise.resolve()
-      .then(() => {
+    let wa: TgWebApp | undefined;
+    tungguTelegram()
+      .then((w) => {
+        wa = w;
+        wa?.ready();
+        wa?.expand();
         if (!wa?.initData)
           throw new Error("Buka halaman ini dari tombol “📝 Ajukan dana” di bot Telegram.");
+        // Pengaman putaran: kalau perangkat menolak cookie sesi, /mini/ajukan
+        // akan mengembalikan ke sini terus-menerus. Masuk kedua dalam waktu
+        // singkat berarti cookie-nya tidak tersimpan.
+        const terakhir = Number(sessionStorage.getItem("mini-masuk") ?? 0);
+        if (Date.now() - terakhir < 8000) {
+          sessionStorage.removeItem("mini-masuk");
+          throw new Error(
+            "Perangkat ini menolak cookie login, jadi formulir tidak bisa dibuka. Coba buka dari aplikasi Telegram di HP, atau perbarui Telegram.",
+          );
+        }
+        sessionStorage.setItem("mini-masuk", String(Date.now()));
         return fetch("/api/mini/masuk", {
           method: "POST",
           headers: { "content-type": "application/json" },
