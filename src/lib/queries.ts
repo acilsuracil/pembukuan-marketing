@@ -377,6 +377,8 @@ export interface TxFilter {
   sumber?: Sumber;
   divisiId?: number;
   platformId?: number;
+  /** Beberapa category sekaligus — baris yang category-nya salah satu dari ini. */
+  platformIds?: number[];
   brandId?: number;
   dompetId?: number;
   akunIklanId?: number;
@@ -410,6 +412,10 @@ function whereClause(f: TxFilter, alias = "") {
   if (f.sumber) eq("sumber", f.sumber);
   if (f.divisiId) eq("divisi_id", f.divisiId);
   if (f.platformId) eq("platform_id", f.platformId);
+  if (f.platformIds?.length) {
+    parts.push(`${p}platform_id IN (${f.platformIds.map(() => "?").join(", ")})`);
+    params.push(...f.platformIds);
+  }
   if (f.brandId) eq("brand_id", f.brandId);
   if (f.dompetId) eq("dompet_id", f.dompetId);
   if (f.akunIklanId) eq("akun_iklan_id", f.akunIklanId);

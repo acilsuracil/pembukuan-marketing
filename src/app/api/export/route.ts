@@ -3,6 +3,7 @@ import { JENIS_SEMUA } from "@/lib/jenis";
 import { hasPerm } from "@/lib/policy";
 import { listTransaksi, type TxFilter } from "@/lib/queries";
 import { getUser } from "@/lib/session";
+import { ids } from "@/lib/sp";
 import type { Jenis } from "@/lib/types";
 
 function csvCell(v: unknown): string {
@@ -27,7 +28,8 @@ export async function GET(request: Request) {
     to: sp.get("to") || undefined,
     jenis: JENIS_SEMUA.includes(jenisRaw as Jenis) ? (jenisRaw as Jenis) : undefined,
     divisiId: idOf("divisi"),
-    platformId: idOf("platform"),
+    // Boleh beberapa category, berpisah koma — sama dengan halaman pengeluaran.
+    platformIds: ids({ platform: sp.get("platform") ?? undefined }, "platform"),
     brandId: idOf("brand"),
     dompetId: idOf("dompet"),
     q: sp.get("q") || undefined,

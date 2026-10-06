@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { JENIS_LABEL } from "@/lib/format";
 import { JENIS_SEMUA } from "@/lib/jenis";
 import type { TxOpt } from "./TxForm";
@@ -118,22 +118,17 @@ export default function TxFilters({
           </select>
         </div>
         <div>
-          <label className="label" htmlFor="f-platform">
+          <span className="label" id="f-platform-label">
             Category
-          </label>
-          <select
-            id="f-platform"
-            className="field w-[150px] py-1.5 text-xs"
+          </span>
+          <MultiPilih
+            labelId="f-platform-label"
+            semua="Semua category"
+            satuan="category"
+            options={platform}
             value={v.platform}
-            onChange={(e) => set({ platform: e.target.value })}
-          >
-            <option value="">Semua category</option>
-            {platform.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.label}
-              </option>
-            ))}
-          </select>
+            onChange={(platform) => set({ platform })}
+          />
         </div>
         <div>
           <label className="label" htmlFor="f-brand">
@@ -226,5 +221,111 @@ export default function TxFilters({
         </div>
       </div>
     </section>
+  );
+}
+
+/**
+ * Pilihan ganda berbentuk dropdown berisi kotak centang. Nilainya id berpisah
+ * koma ("3,5,8") supaya tetap satu parameter URL seperti filter lain; kosong =
+ * semua. Setiap centang langsung diterapkan, sama dengan select di sebelahnya.
+ */
+function MultiPilih({
+  labelId,
+  semua,
+  satuan,
+  options,
+  value,
+  onChange,
+}: {
+  labelId: string;
+  semua: string;
+  satuan: string;
+  options: TxOpt[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [buka, setBuka] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const terpilih = value.split(",").filter(Boolean);
+
+  // Tutup saat klik di luar atau tekan Escape — seperti select biasa.
+  useEffect(() => {
+    if (!buka) return;
+    const klik = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setBuka(false);
+    };
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setBuka(false);
+    document.addEventListener("mousedown", klik);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", klik);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [buka]);
+
+  const ringkas =
+    terpilih.length === 0
+      ? semua
+      : terpilih.length === 1
+        ? (options.find((o) => String(o.id) === terpilih[0])?.label ?? `1 ${satuan}`)
+        : `${terpilih.length} ${satuan}`;
+
+  const toggle = (id: string) =>
+    onChange(
+      (terpilih.includes(id) ? terpilih.filter((x) => x !== id) : [...terpilih, id]).join(","),
+    );
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        aria-labelledby={labelId}
+        aria-haspopup="listbox"
+        aria-expanded={buka}
+        className="field flex w-[170px] items-center justify-between gap-2 py-1.5 text-left text-xs"
+        onClick={() => setBuka((b) => !b)}
+      >
+        <span className="truncate">{ringkas}</span>
+        <span aria-hidden className="text-[var(--text-muted)]">
+          ▾
+        </span>
+      </button>
+      {buka && (
+        <div
+          role="listbox"
+          aria-multiselectable="true"
+          aria-labelledby={labelId}
+          className="card absolute z-20 mt-1 max-h-72 w-[230px] overflow-y-auto p-1 shadow-lg"
+        >
+          <button
+            type="button"
+            className="w-full rounded px-2 py-1.5 text-left text-xs hover:bg-[var(--wash)]"
+            onClick={() => onChange("")}
+          >
+            {terpilih.length === 0 ? "✓ " : ""}
+            {semua}
+          </button>
+          <div className="my-1 border-t border-[var(--hairline)]" />
+          {options.map((o) => {
+            const id = String(o.id);
+            return (
+              <label
+                key={o.id}
+                role="option"
+                aria-selected={terpilih.includes(id)}
+                className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-[var(--wash)]"
+              >
+                <input
+                  type="checkbox"
+                  checked={terpilih.includes(id)}
+                  onChange={() => toggle(id)}
+                />
+                {o.label}
+              </label>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }

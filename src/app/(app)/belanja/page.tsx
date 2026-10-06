@@ -10,7 +10,7 @@ import { JENIS_SEMUA } from "@/lib/jenis";
 import { hasPerm } from "@/lib/policy";
 import { getSummary, listTransaksi, type TxFilter } from "@/lib/queries";
 import { requireUser } from "@/lib/session";
-import { first, num, qs, type SP } from "@/lib/sp";
+import { first, ids, num, qs, type SP } from "@/lib/sp";
 import type { Jenis } from "@/lib/types";
 
 export default async function BelanjaPage({
@@ -39,7 +39,7 @@ export default async function BelanjaPage({
     to: values.to || undefined,
     jenis: JENIS_SEMUA.includes(jenisRaw as Jenis) ? (jenisRaw as Jenis) : undefined,
     divisiId: num(sp, "divisi"),
-    platformId: num(sp, "platform"),
+    platformIds: ids(sp, "platform"),
     brandId: num(sp, "brand"),
     dompetId: num(sp, "dompet"),
     q: values.q || undefined,

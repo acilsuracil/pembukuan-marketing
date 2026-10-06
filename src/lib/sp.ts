@@ -15,6 +15,22 @@ export function num(sp: SP, key: string): number | undefined {
   return Number.isInteger(n) && n > 0 ? n : undefined;
 }
 
+/**
+ * Daftar id dari satu parameter berpisah koma ("3,5,8"), untuk filter yang
+ * boleh memilih lebih dari satu. Yang bukan angka sah dibuang; kosong = undefined.
+ */
+export function ids(sp: SP, key: string): number[] | undefined {
+  const out = [
+    ...new Set(
+      first(sp, key)
+        .split(",")
+        .map((s) => Number(s.trim()))
+        .filter((n) => Number.isInteger(n) && n > 0),
+    ),
+  ];
+  return out.length > 0 ? out : undefined;
+}
+
 /** Menyusun query string dari nilai yang ada isinya saja. */
 export function qs(params: Record<string, string | number | undefined | null>): string {
   const u = new URLSearchParams();

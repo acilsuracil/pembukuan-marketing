@@ -677,6 +677,32 @@ step("Tabel pengeluaran: total di kaki tabel dan pembagian halaman");
   );
 }
 
+step("Filter category bisa memilih lebih dari satu");
+{
+  const meta = one(`SELECT id FROM platform WHERE name='Meta Ads'`).id;
+  const ig = one(`SELECT id FROM platform WHERE name='Instagram'`).id;
+  const hitung = (...p) =>
+    one(
+      `SELECT COUNT(*) AS n, IFNULL(SUM(delta_biaya),0) AS biaya FROM v_transaksi
+       WHERE platform_id IN (${p.map(() => "?").join(",")})`,
+      ...p,
+    );
+
+  const satu = hitung(meta);
+  const dua = hitung(meta, ig);
+  check("data uji punya baris di kedua category", satu.n > 0 && dua.n > satu.n, true);
+
+  const h1 = (await get(`/belanja?platform=${meta}`)).body.replaceAll("<!-- -->", "");
+  checkIncludes("satu category (bentuk lama) tetap jalan", h1, `Total pengeluaran (${satu.n} baris sesuai filter)`);
+
+  const h2 = (await get(`/belanja?platform=${meta},${ig}`)).body.replaceAll("<!-- -->", "");
+  checkIncludes("dua category: jumlah baris gabungan", h2, `Total pengeluaran (${dua.n} baris sesuai filter)`);
+  checkIncludes("dua category: total biaya gabungan", h2, rupiah(dua.biaya));
+
+  const csv = await (await fetch(`${BASE}/api/export?platform=${meta},${ig}`, { headers: { cookie } })).text();
+  check("ekspor CSV ikut filter dua category", csv.trim().split("\r\n").length - 1, dua.n);
+}
+
 console.log(
   gagal === 0
     ? `\n✓ ${langkah.length} langkah, semua pemeriksaan lolos.`
