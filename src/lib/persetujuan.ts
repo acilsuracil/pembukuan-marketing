@@ -50,11 +50,14 @@ export const TAHAP_LABEL: Record<Tahap, string> = {
 
 /* ---------------------------------------------------------------- siapa boleh */
 
-/** Leader divisi pengajuan ini. Owner selalu boleh, sebagai cadangan. */
+/**
+ * Leader divisi pengajuan ini. Owner hanya jadi cadangan untuk divisi yang
+ * belum punya leader — begitu leader dipilih, hanya dia yang memutuskan.
+ */
 export function bisaLeader(user: Pelaku, g: PengajuanRow): boolean {
-  if (user.role === "owner") return true;
   const d = g.divisi_id ? getDivisi(g.divisi_id) : undefined;
-  return Boolean(d?.leader_id && d.leader_id === user.id);
+  if (d?.leader_id) return d.leader_id === user.id;
+  return user.role === "owner";
 }
 
 /**
