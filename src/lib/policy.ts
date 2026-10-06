@@ -40,7 +40,7 @@ export const PERM_LIST = [
   [
     "manageMaster",
     "Kelola data master",
-    "Divisi, platform, akun iklan, brand, dan rekening penerima.",
+    "Divisi, category, akun iklan, brand, dan rekening penerima.",
   ],
   ["lockPeriod", "Kunci periode", "Membekukan transaksi sampai tanggal tertentu."],
   ["manageUsers", "Kelola akun", "Membuat akun, mengubah peran, dan me-reset password."],

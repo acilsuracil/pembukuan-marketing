@@ -102,7 +102,7 @@ export default function ImportForm({
             name="csv"
             rows={5}
             className="field font-mono text-xs"
-            placeholder="Tanggal,Platform,Jenis Pembayaran,Rekening,Keterangan,Nominal"
+            placeholder="Tanggal,Category,Jenis Pembayaran,Rekening,Keterangan,Nominal"
           />
         </div>
 
@@ -157,7 +157,7 @@ export default function ImportForm({
               <p className="font-medium">Data master yang akan dibuat:</p>
               <ul className="mt-1 space-y-0.5 text-[var(--text-secondary)]">
                 {baru.divisi.length > 0 && <li>Divisi: {baru.divisi.join(", ")}</li>}
-                {baru.platform.length > 0 && <li>Platform: {baru.platform.join(", ")}</li>}
+                {baru.platform.length > 0 && <li>Category: {baru.platform.join(", ")}</li>}
                 {baru.jenisBayar.length > 0 && (
                   <li>Jenis pembayaran: {baru.jenisBayar.join(", ")}</li>
                 )}
@@ -178,7 +178,7 @@ export default function ImportForm({
                 <tr className="border-b border-[var(--hairline)] text-left text-xs text-[var(--text-muted)]">
                   <th className="px-2 py-2 font-medium">Baris</th>
                   <th className="px-2 py-2 font-medium">Tanggal</th>
-                  <th className="px-2 py-2 font-medium">Platform</th>
+                  <th className="px-2 py-2 font-medium">Category</th>
                   <th className="px-2 py-2 font-medium">Jenis</th>
                   <th className="px-2 py-2 font-medium">Keterangan</th>
                   <th className="px-2 py-2 text-right font-medium">Nominal</th>

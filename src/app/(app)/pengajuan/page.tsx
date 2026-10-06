@@ -108,7 +108,7 @@ export default async function PengajuanListPage({
               <th className="px-3 py-2 font-medium">Keterangan</th>
               <th className="px-3 py-2 text-right font-medium">Nominal</th>
               <th className="px-3 py-2 font-medium">Tujuan dana</th>
-              <th className="px-3 py-2 font-medium">Divisi / platform</th>
+              <th className="px-3 py-2 font-medium">Divisi / category</th>
               <th className="px-3 py-2 font-medium">Status</th>
               <th className="px-4 py-2 font-medium">Umur</th>
             </tr>

@@ -35,7 +35,7 @@ export default async function PlatformPage({
     {
       kind: "text",
       name: "name",
-      label: "Nama platform",
+      label: "Nama category",
       value: editing?.name,
       required: true,
       minLength: 2,
@@ -48,7 +48,7 @@ export default async function PlatformPage({
       value: editing?.divisi_id,
       empty: "— tidak ada —",
       options: divisi.map((d) => ({ value: d.id, label: d.name })),
-      hint: "Hanya mengisi formulir otomatis. Divisi yang mengikat laporan tetap kolom di tiap transaksi, jadi platform ini boleh dipakai divisi lain.",
+      hint: "Hanya mengisi formulir otomatis. Divisi yang mengikat laporan tetap kolom di tiap transaksi, jadi category ini boleh dipakai divisi lain.",
     },
     {
       kind: "select",
@@ -57,7 +57,7 @@ export default async function PlatformPage({
       value: editing?.dompet_id,
       empty: "— tidak ada —",
       options: dompet.map((d) => ({ value: d.id, label: d.name })),
-      hint: "Dipakai mengisi input harian. Kosongkan kalau platform ini dibayar finance langsung.",
+      hint: "Dipakai mengisi input harian. Kosongkan kalau category ini dibayar finance langsung.",
     },
     { kind: "color", value: editing?.color_slot },
     {
@@ -76,8 +76,8 @@ export default async function PlatformPage({
           kind="platform"
           fields={fields}
           editingId={editing?.id}
-          title={editing ? `Ubah "${editing.name}"` : "Tambah platform"}
-          submitLabel={editing ? "Simpan perubahan" : "Tambah platform"}
+          title={editing ? `Ubah "${editing.name}"` : "Tambah category"}
+          submitLabel={editing ? "Simpan perubahan" : "Tambah category"}
           listHref="/master/platform"
         />
       </section>
@@ -89,7 +89,7 @@ export default async function PlatformPage({
           </caption>
           <thead>
             <tr className="border-b border-[var(--hairline)] text-left text-xs text-[var(--text-muted)]">
-              <th className="px-4 py-2 font-medium">Platform</th>
+              <th className="px-4 py-2 font-medium">Category</th>
               <th className="px-3 py-2 font-medium">Divisi default</th>
               <th className="px-3 py-2 font-medium">Dompet</th>
               <th className="px-3 py-2 text-right font-medium">Bulan ini</th>

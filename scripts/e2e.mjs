@@ -573,7 +573,7 @@ step("Penjagaan: hal-hal yang harus ditolak");
     row_nominal: ["100.000"],
     row_ket: [""],
   });
-  checkIncludes("baris tanpa platform ditolak", tanpaPlatform.body, "platform belum dipilih");
+  checkIncludes("baris tanpa category ditolak", tanpaPlatform.body, "category belum dipilih");
 
   check(
     "tidak ada baris tambahan yang lolos",

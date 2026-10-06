@@ -174,7 +174,7 @@ export default function HarianForm({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-[var(--hairline)] text-left text-xs text-[var(--text-muted)]">
-              <th className="px-3 py-2 font-medium">Platform</th>
+              <th className="px-3 py-2 font-medium">Category</th>
               <th className="px-3 py-2 font-medium">Divisi</th>
               <th className="px-3 py-2 font-medium">Brand</th>
               <th className="px-3 py-2 font-medium">Akun iklan</th>
@@ -205,7 +205,7 @@ export default function HarianForm({
                           akunId: "",
                         });
                       }}
-                      aria-label="Platform"
+                      aria-label="Category"
                     >
                       <option value="">—</option>
                       {platform.map((p) => (

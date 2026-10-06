@@ -140,9 +140,9 @@ export default async function RingkasanPage() {
         />
         <GroupBars
           data={perPlatform}
-          title="Biaya per platform"
+          title="Biaya per category"
           subtitle={monthLabelLong(month)}
-          unit="platform"
+          unit="category"
         />
       </div>
 

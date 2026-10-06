@@ -533,7 +533,7 @@ export function groupBiaya(kind: GroupKind, f: TxFilter = {}): GroupSpend[] {
   const nameCol = `${kind}_name`;
   const slotCol = kind === "divisi" ? "divisi_slot" : `${kind}_slot`;
   const label =
-    kind === "divisi" ? "(Tanpa divisi)" : kind === "brand" ? "(Tanpa brand)" : "(Tanpa platform)";
+    kind === "divisi" ? "(Tanpa divisi)" : kind === "brand" ? "(Tanpa brand)" : "(Tanpa category)";
   const budget =
     kind === "platform" ? "0" : `IFNULL(MAX(m.budget_idr), 0)`;
   const join =
@@ -563,7 +563,7 @@ export function crossDivisiPlatform(f: TxFilter = {}): CrossCell[] {
   const w = whereClause(f, "v");
   return all<CrossCell>(
     `SELECT v.divisi_id, IFNULL(v.divisi_name, '(Tanpa divisi)')     AS divisi_name,
-            v.platform_id, IFNULL(v.platform_name, '(Tanpa platform)') AS platform_name,
+            v.platform_id, IFNULL(v.platform_name, '(Tanpa category)') AS platform_name,
             SUM(v.delta_biaya) AS biaya
      FROM v_transaksi v
      ${w.sql ? `${w.sql} AND v.delta_biaya <> 0` : "WHERE v.delta_biaya <> 0"}

@@ -4,7 +4,7 @@ import { requirePerm } from "@/lib/session";
 
 const TABS: AdminTab[] = [
   { href: "/master", label: "Divisi" },
-  { href: "/master/platform", label: "Platform" },
+  { href: "/master/platform", label: "Category" },
   { href: "/master/akun-iklan", label: "Akun iklan" },
   { href: "/master/brand", label: "Brand" },
   { href: "/master/penerima", label: "Rekening penerima" },
@@ -23,7 +23,7 @@ export default async function MasterLayout({
       <div className="page-header">
         <h1 className="text-xl font-semibold tracking-tight">Data master</h1>
         <p className="mt-0.5 text-sm text-[var(--text-muted)]">
-          Divisi, platform, akun iklan, brand, rekening penerima, dan jenis
+          Divisi, category, akun iklan, brand, rekening penerima, dan jenis
           pembayaran. Yang sudah
           terpakai hanya bisa diarsipkan — supaya laporan periode lama tidak
           berubah di belakang hari.

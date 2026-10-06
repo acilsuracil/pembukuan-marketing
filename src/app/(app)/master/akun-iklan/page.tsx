@@ -34,10 +34,10 @@ export default async function AkunIklanPage({
     {
       kind: "select",
       name: "platform_id",
-      label: "Platform",
+      label: "Category",
       value: editing?.platform_id,
       required: true,
-      empty: "— pilih platform —",
+      empty: "— pilih category —",
       options: platform.map((p) => ({ value: p.id, label: p.name })),
     },
     {
@@ -87,9 +87,9 @@ export default async function AkunIklanPage({
           listHref="/master/akun-iklan"
         />
         <p className="hint mt-3 border-t border-[var(--hairline)] pt-3">
-          Akun iklan itu opsional. Gunanya saat satu platform punya beberapa akun
+          Akun iklan itu opsional. Gunanya saat satu category punya beberapa akun
           yang ditagih terpisah — tanpa ini, mutasi Bank Jago tidak bisa
-          dicocokkan lebih halus dari nama platformnya.
+          dicocokkan lebih halus dari nama category-nya.
         </p>
       </section>
 
@@ -98,7 +98,7 @@ export default async function AkunIklanPage({
           <thead>
             <tr className="border-b border-[var(--hairline)] text-left text-xs text-[var(--text-muted)]">
               <th className="px-4 py-2 font-medium">Akun iklan</th>
-              <th className="px-3 py-2 font-medium">Platform</th>
+              <th className="px-3 py-2 font-medium">Category</th>
               <th className="px-3 py-2 font-medium">Brand default</th>
               <th className="px-3 py-2 font-medium">Dompet</th>
               <th className="px-4 py-2" />
@@ -111,7 +111,7 @@ export default async function AkunIklanPage({
                   colSpan={5}
                   className="px-4 py-8 text-center text-xs text-[var(--text-muted)]"
                 >
-                  Belum ada akun iklan. Boleh dilewati kalau tiap platform hanya
+                  Belum ada akun iklan. Boleh dilewati kalau tiap category hanya
                   punya satu akun.
                 </td>
               </tr>

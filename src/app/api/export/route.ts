@@ -38,7 +38,7 @@ export async function GET(request: Request) {
   const rows = listTransaksi(filter);
 
   const header = [
-    "Tanggal", "Jenis", "Divisi", "Platform", "Akun iklan", "Brand",
+    "Tanggal", "Jenis", "Divisi", "Category", "Akun iklan", "Brand",
     "Sumber dana", "Dompet", "Penerima", "Keterangan", "No referensi",
     "Nominal", "Pengaruh biaya", "Pengaruh saldo dompet", "Dari pengajuan",
     "Dicatat oleh",

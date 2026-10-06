@@ -26,8 +26,8 @@ const JENIS_HINT: Partial<Record<Jenis, string>> = {
   belanja: "Uang yang benar-benar jadi biaya marketing.",
   topup: "Dana dari finance masuk dompet. Menambah saldo, belum jadi biaya.",
   refund:
-    "Pengembalian dari platform atau endorse yang batal. Mengurangi biaya divisi/platform terkait.",
-  biaya_dompet: "Biaya admin atau transfer bank. Biaya, tapi bukan biaya platform.",
+    "Pengembalian dari vendor iklan atau endorse yang batal. Mengurangi biaya divisi/category terkait.",
+  biaya_dompet: "Biaya admin atau transfer bank. Biaya, tapi bukan biaya iklan.",
   koreksi:
     "Penyesuaian saldo dompet saja — untuk merapikan selisih hasil cek mutasi. Tidak mengubah total biaya.",
 };
@@ -223,7 +223,7 @@ export default function TxForm({
           <div className="grid gap-4 sm:grid-cols-3">
             <div>
               <label className="label" htmlFor="t-platform">
-                Platform
+                Category
               </label>
               <select
                 id="t-platform"
@@ -238,7 +238,7 @@ export default function TxForm({
                   if (p?.dompetId && dompetId === "") setDompetId(String(p.dompetId));
                 }}
               >
-                <option value="">— pilih platform —</option>
+                <option value="">— pilih category —</option>
                 {platform.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.label}
@@ -328,7 +328,7 @@ export default function TxForm({
                 >
                   <option value="">
                     {akunTerpilih.length === 0
-                      ? "— platform ini belum punya akun iklan —"
+                      ? "— category ini belum punya akun iklan —"
                       : "— tanpa akun iklan —"}
                   </option>
                   {akunTerpilih.map((a) => (

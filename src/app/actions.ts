@@ -273,10 +273,10 @@ export async function savePlatform(
   if (!me) return DENIED;
   if (!hasPerm(me, "manageMaster")) return NO_ACCESS;
 
-  const idRead = optionalId(fd, "id", "Platform");
+  const idRead = optionalId(fd, "id", "Category");
   if (!idRead.ok) return { ok: false, error: idRead.error };
   const name = str(fd, "name");
-  if (name.length < 2) return { ok: false, error: "Nama platform minimal 2 karakter." };
+  if (name.length < 2) return { ok: false, error: "Nama category minimal 2 karakter." };
 
   const divisi = optionalId(fd, "divisi_id", "Divisi");
   if (!divisi.ok) return { ok: false, error: divisi.error };
@@ -299,7 +299,7 @@ export async function savePlatform(
       );
     }
   } catch (e) {
-    return uniqueError(e, "Platform", name);
+    return uniqueError(e, "Category", name);
   }
 
   logActivity(me, idRead.id ? "ubah-platform" : "tambah-platform", name);
@@ -307,7 +307,7 @@ export async function savePlatform(
   refresh();
   return {
     ok: true,
-    message: idRead.id ? "Platform diperbarui." : "Platform ditambahkan.",
+    message: idRead.id ? "Category diperbarui." : "Category ditambahkan.",
   };
 }
 
@@ -321,9 +321,9 @@ export async function saveAkunIklan(
 
   const idRead = optionalId(fd, "id", "Akun iklan");
   if (!idRead.ok) return { ok: false, error: idRead.error };
-  const platform = optionalId(fd, "platform_id", "Platform");
+  const platform = optionalId(fd, "platform_id", "Category");
   if (!platform.ok) return { ok: false, error: platform.error };
-  if (!platform.id) return { ok: false, error: "Akun iklan harus menyebut platformnya." };
+  if (!platform.id) return { ok: false, error: "Akun iklan harus menyebut category-nya." };
 
   const name = str(fd, "name");
   if (name.length < 2) return { ok: false, error: "Nama akun iklan minimal 2 karakter." };
@@ -473,7 +473,7 @@ type MasterKind =
 
 const MASTER: Record<MasterKind, { table: string; label: string; perm: "manageMaster" | "manageDompet" }> = {
   divisi: { table: "divisi", label: "Divisi", perm: "manageMaster" },
-  platform: { table: "platform", label: "Platform", perm: "manageMaster" },
+  platform: { table: "platform", label: "Category", perm: "manageMaster" },
   brand: { table: "brand", label: "Brand", perm: "manageMaster" },
   penerima: { table: "penerima", label: "Penerima", perm: "manageMaster" },
   akun_iklan: { table: "akun_iklan", label: "Akun iklan", perm: "manageMaster" },
@@ -718,7 +718,7 @@ function readPengajuan(
   if (!dompet.ok) return { ok: false, error: dompet.error };
   const brand = optionalId(fd, "brand_id", "Brand");
   if (!brand.ok) return { ok: false, error: brand.error };
-  const platform = optionalId(fd, "platform_id", "Platform");
+  const platform = optionalId(fd, "platform_id", "Category");
   if (!platform.ok) return { ok: false, error: platform.error };
   const divisi = optionalId(fd, "divisi_id", "Divisi");
   if (!divisi.ok) return { ok: false, error: divisi.error };
@@ -1318,7 +1318,7 @@ function readTx(fd: FormData): { ok: false; error: string } | { ok: true; v: TxV
   if (!dompet.ok) return { ok: false, error: dompet.error };
   const divisi = optionalId(fd, "divisi_id", "Divisi");
   if (!divisi.ok) return { ok: false, error: divisi.error };
-  const platform = optionalId(fd, "platform_id", "Platform");
+  const platform = optionalId(fd, "platform_id", "Category");
   if (!platform.ok) return { ok: false, error: platform.error };
   const brand = optionalId(fd, "brand_id", "Brand");
   if (!brand.ok) return { ok: false, error: brand.error };
@@ -1346,7 +1346,7 @@ function readTx(fd: FormData): { ok: false; error: string } | { ok: true; v: TxV
   if ((jenis === "belanja" || jenis === "refund") && !divisi.id)
     return { ok: false, error: "Divisi wajib diisi." };
   if ((jenis === "belanja" || jenis === "refund") && !platform.id)
-    return { ok: false, error: "Platform wajib diisi." };
+    return { ok: false, error: "Category wajib diisi." };
 
   if ((jenis === "topup" || jenis === "biaya_dompet" || jenis === "koreksi") && !dompet.id)
     return { ok: false, error: `${jenis === "topup" ? "Top-up" : "Baris ini"} harus menyebut dompetnya.` };
@@ -1694,7 +1694,7 @@ export async function saveBelanjaHarian(
     const divisiId = Number(divisis[i] ?? "");
     const platformId = Number(platforms[i] ?? "");
     if (!Number.isInteger(platformId) || platformId <= 0)
-      return { ok: false, error: `Baris ${i + 1}: platform belum dipilih.` };
+      return { ok: false, error: `Baris ${i + 1}: category belum dipilih.` };
     if (!Number.isInteger(divisiId) || divisiId <= 0)
       return { ok: false, error: `Baris ${i + 1}: divisi belum dipilih.` };
 

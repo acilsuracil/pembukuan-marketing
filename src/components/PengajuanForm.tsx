@@ -208,7 +208,7 @@ export default function PengajuanForm({
       `Nominal : ${nominal === null ? "—" : fmtIdr(nominal)}`,
       `Rekening : ${rek || "—"}`,
       barisBrand,
-      `Platform : ${label(platform, platformId) || "—"}`,
+      `Category : ${label(platform, platformId) || "—"}`,
       `Divisi : ${label(divisi, divisiId) || "—"}`,
       ...linkFinance(links.map((l) => l.trim()).filter(Boolean)),
     ].join("\n");
@@ -498,7 +498,7 @@ export default function PengajuanForm({
         <div className="grid gap-4 sm:grid-cols-3">
           <div>
             <label className="label" htmlFor="p-platform">
-              Platform
+              Category
             </label>
             <select
               id="p-platform"
@@ -513,7 +513,7 @@ export default function PengajuanForm({
                 if (p?.divisiId && divisiId === "") setDivisiId(String(p.divisiId));
               }}
             >
-              <option value="">— pilih platform —</option>
+              <option value="">— pilih category —</option>
               {platform.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.label}

@@ -56,7 +56,7 @@ export default async function PengajuanDetailPage({
       g.brand_name ?? "",
       porsi.map((p) => ({ nama: p.brand_name, nominal: p.nominal })),
     ),
-    `Platform : ${g.platform_name ?? "—"}`,
+    `Category : ${g.platform_name ?? "—"}`,
     `Divisi : ${g.divisi_name ?? "—"}`,
     ...linkFinance(links),
   ].join("\n");
@@ -106,7 +106,7 @@ export default async function PengajuanDetailPage({
                 ["Tanggal cair", g.tanggal_bayar ? fmtDate(g.tanggal_bayar) : "–"],
                 ["Rekening tujuan", rek],
                 ["Divisi", g.divisi_name ?? "–"],
-                ["Platform", g.platform_name ?? "–"],
+                ["Category", g.platform_name ?? "–"],
                 [
                   "Brand",
                   porsi.length > 0

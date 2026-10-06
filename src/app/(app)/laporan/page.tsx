@@ -119,9 +119,9 @@ export default async function LaporanPage({
         />
         <GroupBars
           data={perPlatform}
-          title="Biaya per platform"
+          title="Biaya per category"
           subtitle={periodeLabel}
-          unit="platform"
+          unit="category"
         />
       </div>
 
@@ -136,7 +136,7 @@ export default async function LaporanPage({
       <section className="card overflow-x-auto">
         <table className="w-full text-sm">
           <caption className="px-4 pt-4 text-left text-sm font-semibold">
-            Matriks divisi × platform
+            Matriks divisi × category
           </caption>
           <thead>
             <tr className="border-b border-[var(--hairline)] text-left text-xs text-[var(--text-muted)]">

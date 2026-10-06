@@ -109,7 +109,7 @@ function bacaCsv(teks: string, divisiDefault: string): { error: string } | { row
       continue;
     }
     if (!dasar.platform) {
-      out.push({ ...dasar, tanggal, nominal, error: "Platform kosong." });
+      out.push({ ...dasar, tanggal, nominal, error: "Category kosong." });
       continue;
     }
     if (!divisi) {

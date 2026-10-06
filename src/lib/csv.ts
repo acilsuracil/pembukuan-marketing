@@ -50,6 +50,7 @@ export function parseCsv(text: string): string[][] {
 const KOLOM: Record<string, string> = {
   tanggal: "tanggal",
   platform: "platform",
+  category: "platform",
   divisi: "divisi",
   "jenis pembayaran": "jenisBayar",
   rekening: "rekening",

@@ -45,7 +45,7 @@ export default function TxTable({
           <tr className="border-b border-[var(--hairline)] text-left text-xs text-[var(--text-muted)]">
             <th className="px-4 py-2 font-medium">Tanggal</th>
             <th className="px-3 py-2 font-medium">Jenis</th>
-            <th className="px-3 py-2 font-medium">Divisi / platform</th>
+            <th className="px-3 py-2 font-medium">Divisi / category</th>
             <th className="px-3 py-2 font-medium">Brand</th>
             <th className="px-3 py-2 font-medium">Sumber</th>
             <th className="px-3 py-2 text-right font-medium">Nominal</th>

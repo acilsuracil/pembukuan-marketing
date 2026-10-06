@@ -119,7 +119,7 @@ export default function TxFilters({
         </div>
         <div>
           <label className="label" htmlFor="f-platform">
-            Platform
+            Category
           </label>
           <select
             id="f-platform"
@@ -127,7 +127,7 @@ export default function TxFilters({
             value={v.platform}
             onChange={(e) => set({ platform: e.target.value })}
           >
-            <option value="">Semua platform</option>
+            <option value="">Semua category</option>
             {platform.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.label}

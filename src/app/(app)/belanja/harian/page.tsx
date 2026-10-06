@@ -35,7 +35,7 @@ export default async function HarianPage({
             Input harian dompet
           </h1>
           <p className="mt-0.5 text-sm text-[var(--text-muted)]">
-            Salin mutasi dompet hari itu: satu baris per platform / akun iklan.
+            Salin mutasi dompet hari itu: satu baris per category / akun iklan.
             Semua tersimpan sebagai pengeluaran dari dompet yang dipilih.
           </p>
         </div>

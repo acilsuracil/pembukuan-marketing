@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Pembukuan Marketing",
-  description: "Panel pembukuan pengeluaran marketing — divisi, platform, dan dompet",
+  description: "Panel pembukuan pengeluaran marketing — divisi, category, dan dompet",
 };
 
 // Tema dan lebar sidebar diterapkan sebelum paint pertama, supaya halaman tidak
